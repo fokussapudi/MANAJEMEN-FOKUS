@@ -1,19 +1,44 @@
 import React, { useState, useRef } from 'react';
-import { KhotmilJadwalRow, KhotmilAbsenRow } from '../types';
+import { KhotmilJadwalRow, KhotmilAbsenRow, OrganizationProfile } from '../types';
 import { initialKhotmilJadwal, initialKhotmilAbsen } from '../data/initialData';
 import {
   BookmarkCheck, Plus, Printer, Trash2, Calendar, Users, Search, Edit3,
   Download, Upload, FileSpreadsheet, FileText, CheckCircle2, X, Mail
 } from 'lucide-react';
 import { PrintModal } from './PrintModal';
+import { Pagination } from './Pagination';
+import { exportToExcel, downloadCsvTemplate, parseExcelFile, exportMultiSheetWorkbook } from '../utils/excelUtils';
+
+import { matchesYear, formatGregorianIndo } from '../utils/filterUtils';
 
 interface KhotmilQuranViewProps {
+  jadwal?: KhotmilJadwalRow[];
+  setJadwal?: React.Dispatch<React.SetStateAction<KhotmilJadwalRow[]>>;
+  absen?: KhotmilAbsenRow[];
+  setAbsen?: React.Dispatch<React.SetStateAction<KhotmilAbsenRow[]>>;
   onNotify: (title: string, message: string) => void;
+  selectedYear?: string;
+  orgProfile?: OrganizationProfile;
+  logoUrl?: string;
 }
 
-export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) => {
-  const [jadwal, setJadwal] = useState<KhotmilJadwalRow[]>(initialKhotmilJadwal);
-  const [absen, setAbsen] = useState<KhotmilAbsenRow[]>(initialKhotmilAbsen);
+export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ 
+  jadwal: propJadwal, 
+  setJadwal: propSetJadwal, 
+  absen: propAbsen, 
+  setAbsen: propSetAbsen, 
+  onNotify,
+  selectedYear = 'Semua',
+  orgProfile,
+  logoUrl
+}) => {
+  const [localJadwal, setLocalJadwal] = useState<KhotmilJadwalRow[]>(initialKhotmilJadwal);
+  const jadwal = propJadwal || localJadwal;
+  const setJadwal = propSetJadwal || setLocalJadwal;
+
+  const [localAbsen, setLocalAbsen] = useState<KhotmilAbsenRow[]>(initialKhotmilAbsen);
+  const absen = propAbsen || localAbsen;
+  const setAbsen = propSetAbsen || setLocalAbsen;
   const [activeSubTab, setActiveSubTab] = useState<'jadwal' | 'absen'>('jadwal');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -33,6 +58,70 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
   const [jadwalNoHp, setJadwalNoHp] = useState('');
   const [jadwalInfaq, setJadwalInfaq] = useState<number | string>(500000);
 
+  const [formTahun, setFormTahun] = useState('2026');
+  const [selDay, setSelDay] = useState('');
+  const [selDate, setSelDate] = useState('');
+  const [selHijri, setSelHijri] = useState('');
+
+  const parseHariTanggal = (str: string) => {
+    let parsedDay = '';
+    let parsedHijri = '';
+    
+    const parts = str.split(',');
+    if (parts.length > 0) {
+      const possibleDay = parts[0].trim();
+      const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+      if (days.includes(possibleDay)) {
+        parsedDay = possibleDay;
+      }
+      
+      if (parts.length > 1) {
+        const dateAndHijri = parts[1].split('/');
+        if (dateAndHijri.length > 1) {
+          parsedHijri = dateAndHijri[1].trim();
+        } else {
+          const text = parts[1].trim();
+          if (text.endsWith('H') || text.includes('H')) {
+            parsedHijri = text;
+          }
+        }
+      }
+    }
+    return { parsedDay, parsedHijri };
+  };
+
+  const handleDateChange = (dateVal: string) => {
+    setSelDate(dateVal);
+    const { dayName, dateFormatted } = formatGregorianIndo(dateVal);
+    let dayToUse = dayName || selDay;
+    if (dayName) setSelDay(dayName);
+    
+    const combined = `${dayToUse ? `${dayToUse}, ` : ''}${dateFormatted}${selHijri ? ` / ${selHijri}` : ''}`;
+    setJadwalHariTanggal(combined);
+  };
+
+  const handleDayChange = (dayVal: string) => {
+    setSelDay(dayVal);
+    let datePart = '';
+    if (selDate) {
+      const { dateFormatted } = formatGregorianIndo(selDate);
+      datePart = dateFormatted;
+    }
+    const combined = `${dayVal ? `${dayVal}, ` : ''}${datePart}${selHijri ? ` / ${selHijri}` : ''}`;
+    setJadwalHariTanggal(combined);
+  };
+
+  const handleHijriChange = (hijriVal: string) => {
+    setSelHijri(hijriVal);
+    let datePart = '';
+    if (selDate) {
+      const { dateFormatted } = formatGregorianIndo(selDate);
+      datePart = dateFormatted;
+    }
+    const combined = `${selDay ? `${selDay}, ` : ''}${datePart}${hijriVal ? ` / ${hijriVal}` : ''}`;
+    setJadwalHariTanggal(combined);
+  };
+
   // Form Modal States for Absensi Kehadiran
   const [showAbsenModal, setShowAbsenModal] = useState(false);
   const [editingAbsenId, setEditingAbsenId] = useState<string | null>(null);
@@ -40,33 +129,45 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
   const [absenNama, setAbsenNama] = useState('');
   const [absenAlamat, setAbsenAlamat] = useState('');
   const [absenJuz, setAbsenJuz] = useState('Juz 1 & 2');
-  const [absenKet, setAbsenKet] = useState('Hadir / Mutqin');
+  const [absenKet, setAbsenKet] = useState('Hadir / Alpa');
 
   // Custom Signatures State & Modal
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [sign1Title, setSign1Title] = useState('Koordinator Khotmil Qur\'an');
-  const [sign1Name, setSign1Name] = useState('SYAIFUL ISLAM');
-  const [sign2Title, setSign2Title] = useState('Ketua FOKUS Sapudi');
-  const [sign2Name, setSign2Name] = useState('UST. ZAINAL ABIDIN');
+  const [sign1Name, setSign1Name] = useState('Ust. Rifqi Rahmatul Akbar');
+  const [sign2Title, setSign2Title] = useState('Ketua FOKUS Pulau Sapudi');
+  const [sign2Name, setSign2Name] = useState('Ust. Subairi, S.Ag');
+
+  // Pagination States
+  const [jadwalPage, setJadwalPage] = useState(1);
+  const [jadwalPageSize, setJadwalPageSize] = useState(10);
+  const [absenPage, setAbsenPage] = useState(1);
+  const [absenPageSize, setAbsenPageSize] = useState(10);
 
   // Search Filter
   const filteredJadwal = jadwal.filter(item =>
-    item.hariTanggal.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.tuanRumah.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.alamat.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.noHandphone.includes(searchTerm)
+    matchesYear(item, selectedYear) &&
+    (item.hariTanggal.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     item.tuanRumah.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     item.alamat.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     item.noHandphone.includes(searchTerm))
   );
+
+  const paginatedJadwal = filteredJadwal.slice((jadwalPage - 1) * jadwalPageSize, jadwalPage * jadwalPageSize);
 
   const filteredAbsen = absen.filter(item =>
-    item.nis.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.alamat.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.juzAlQuran.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.keterangan.toLowerCase().includes(searchTerm.toLowerCase())
+    matchesYear(item, selectedYear) &&
+    (item.nis.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     item.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     item.alamat.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     item.juzAlQuran.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     item.keterangan.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const paginatedAbsen = filteredAbsen.slice((absenPage - 1) * absenPageSize, absenPage * absenPageSize);
+
   // Total Infaq
-  const totalInfaq = jadwal.reduce((acc, curr) => acc + (Number(curr.infaq) || 0), 0);
+  const totalInfaq = filteredJadwal.reduce((acc, curr) => acc + (Number(curr.infaq) || 0), 0);
 
   // --- HANDLERS JADWAL ---
   const openAddJadwalModal = () => {
@@ -76,6 +177,10 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
     setJadwalAlamat('');
     setJadwalNoHp('');
     setJadwalInfaq(500000);
+    setFormTahun(selectedYear !== 'Semua' ? selectedYear : '2026');
+    setSelDay('');
+    setSelDate('');
+    setSelHijri('');
     setShowJadwalModal(true);
   };
 
@@ -86,6 +191,12 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
     setJadwalAlamat(item.alamat);
     setJadwalNoHp(item.noHandphone);
     setJadwalInfaq(item.infaq);
+    setFormTahun(item.tahun || '2026');
+    
+    const parsed = parseHariTanggal(item.hariTanggal);
+    setSelDay(parsed.parsedDay);
+    setSelHijri(parsed.parsedHijri);
+    setSelDate('');
     setShowJadwalModal(true);
   };
 
@@ -105,7 +216,8 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
         tuanRumah: jadwalTuanRumah,
         alamat: jadwalAlamat || 'Sapudi',
         noHandphone: jadwalNoHp || '-',
-        infaq: numInfaq
+        infaq: numInfaq,
+        tahun: formTahun
       } : item));
       onNotify('Jadwal Diperbarui', `Jadwal Khotmil Qur'an ${jadwalTuanRumah} berhasil diperbarui.`);
     } else {
@@ -116,7 +228,8 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
         tuanRumah: jadwalTuanRumah,
         alamat: jadwalAlamat || 'Sapudi',
         noHandphone: jadwalNoHp || '-',
-        infaq: numInfaq
+        infaq: numInfaq,
+        tahun: formTahun
       };
       setJadwal([newRow, ...jadwal]);
       onNotify('Jadwal Ditambahkan', `Jadwal Khotmil Qur'an ${jadwalTuanRumah} berhasil ditambahkan.`);
@@ -194,155 +307,176 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
     }
   };
 
-  // --- EXCEL TEMPLATE, IMPORT & EXPORT ---
+  // --- EXCEL TEMPLATE, IMPORT & EXPORT (.XLSX) ---
   const handleDownloadTemplate = () => {
-    let csvContent = '\uFEFF'; // UTF-8 BOM
     if (activeSubTab === 'jadwal') {
-      csvContent += "HARI / TANGGAL;TUAN RUMAH;ALAMAT;NO. HANDPHONE;INFAQ (RP)\n";
-      csvContent += "15 Ramadhan 1447 H;Bpk. H. Mahmud;Dsn. Sumber Gayam Sapudi;081234567890;500000\n";
-      csvContent += "16 Ramadhan 1447 H;Ust. Abd. Ghofur;Dsn. Nyamplong Sapudi;081987654321;750000\n";
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', 'Template_Khotmil_Jadwal_Wajib.csv');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      onNotify('Template Terunduh', 'Template Excel untuk Jadwal Khotmil Qur\'an berhasil diunduh.');
+      const headers = ['NO', 'HARI / TANGGAL', 'TUAN RUMAH', 'ALAMAT LENGKAP', 'NO. HANDPHONE', 'INFAQ (RP)'];
+            downloadCsvTemplate('Template_Khotmil_Jadwal', headers, sample);
+      onNotify('Template Terunduh', 'Template Excel (.xlsx) untuk Jadwal Khotmil Qur\'an berhasil diunduh.');
     } else {
-      csvContent += "NIS;NAMA PESERTA;ALAMAT;JUZ AL-QUR'AN;KETERANGAN\n";
-      csvContent += "20260101;Ahmad Fauzi;Gayam Sapudi;Juz 1 & Juz 2;Hadir / Mutqin\n";
-      csvContent += "20260102;M. Rizqi Maulana;Tarebun Sapudi;Juz 3;Hadir\n";
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', 'Template_Khotmil_Absensi.csv');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      onNotify('Template Terunduh', 'Template Excel untuk Absensi Khotmil Qur\'an berhasil diunduh.');
+      const headers = ['NO', 'NIS', 'NAMA PESERTA', 'ALAMAT LENGKAP', 'JUZ AL-QUR\'AN', 'KETERANGAN KEHADIRAN'];
+      downloadCsvTemplate('Template_Khotmil_Absensi', headers, sample);
+      onNotify('Template Terunduh', 'Template Excel (.xlsx) untuk Absensi Khotmil Qur\'an berhasil diunduh.');
     }
   };
 
   const handleExportExcel = () => {
-    let csvContent = '\uFEFF'; // UTF-8 BOM
     if (activeSubTab === 'jadwal') {
-      csvContent += "NO;HARI / TANGGAL;TUAN RUMAH;ALAMAT;NO. HANDPHONE;INFAQ (RP)\n";
-      filteredJadwal.forEach((item, index) => {
-        csvContent += `${index + 1};"${item.hariTanggal}";"${item.tuanRumah}";"${item.alamat}";"${item.noHandphone}";${item.infaq}\n`;
-      });
+      const headers = ['NO', 'HARI / TANGGAL', 'TUAN RUMAH', 'ALAMAT LENGKAP', 'NO. HANDPHONE', 'INFAQ (RP)'];
+      const rows = filteredJadwal.map((item, index) => [
+        index + 1,
+        item.hariTanggal,
+        item.tuanRumah,
+        item.alamat,
+        item.noHandphone,
+        item.infaq
+      ]);
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Export_Khotmil_Jadwal_${Date.now()}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      onNotify('Export Excel Berhasil', 'Data jadwal khotmil berhasil diexport ke file Excel (CSV).');
+      exportToExcel(
+        'Jadwal_Khotmil_Quran',
+        headers,
+        rows,
+        {
+          title: 'ORGANISASI FOKUS SAPUDI - JADWAL KHOTMIL QUR\'AN',
+          subtitle: 'Daftar Rotasi Shohibul Bait & Infaq Khotmil Al-Qur\'an',
+          sheetName: 'Jadwal Khotmil'
+        }
+      );
+      onNotify('Export Excel Berhasil', 'Data jadwal khotmil berhasil diexport ke file Excel (.xlsx).');
     } else {
-      csvContent += "NO;NIS;NAMA PESERTA;ALAMAT;JUZ AL-QUR'AN;KETERANGAN\n";
-      filteredAbsen.forEach((item, index) => {
-        csvContent += `${index + 1};"${item.nis}";"${item.nama}";"${item.alamat}";"${item.juzAlQuran}";"${item.keterangan}"\n`;
-      });
+      const headers = ['NO', 'NIS', 'NAMA PESERTA', 'ALAMAT LENGKAP', 'JUZ AL-QUR\'AN', 'KETERANGAN'];
+      const rows = filteredAbsen.map((item, index) => [
+        index + 1,
+        item.nis,
+        item.nama,
+        item.alamat,
+        item.juzAlQuran,
+        item.keterangan
+      ]);
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Export_Khotmil_Absensi_${Date.now()}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      onNotify('Export Excel Berhasil', 'Data absensi khotmil berhasil diexport ke file Excel (CSV).');
+      exportToExcel(
+        'Absensi_Khotmil_Quran',
+        headers,
+        rows,
+        {
+          title: 'ORGANISASI FOKUS SAPUDI - ABSENSI KHOTMIL QUR\'AN',
+          subtitle: 'Rekap Pembagian 30 Juz & Kehadiran Anggota FOKUS',
+          sheetName: 'Absensi Khotmil'
+        }
+      );
+      onNotify('Export Excel Berhasil', 'Data absensi khotmil berhasil diexport ke file Excel (.xlsx).');
     }
+  };
+
+  const handleExportAllWorkbook = () => {
+    const jadwalHeaders = ['NO', 'HARI / TANGGAL', 'TUAN RUMAH', 'ALAMAT LENGKAP', 'NO. HANDPHONE', 'INFAQ (RP)'];
+    const jadwalRows = jadwal.map((item, idx) => [
+      idx + 1,
+      item.hariTanggal,
+      item.tuanRumah,
+      item.alamat,
+      item.noHandphone,
+      item.infaq
+    ]);
+
+    const absenHeaders = ['NO', 'NIS', 'NAMA PESERTA', 'ALAMAT LENGKAP', 'JUZ AL-QUR\'AN', 'KETERANGAN'];
+    const absenRows = absen.map((item, idx) => [
+      idx + 1,
+      item.nis,
+      item.nama,
+      item.alamat,
+      item.juzAlQuran,
+      item.keterangan
+    ]);
+
+    exportMultiSheetWorkbook('Buku_Lengkap_Khotmil_Quran', [
+      {
+        sheetName: 'Jadwal Shohibul Bait',
+        title: 'ORGANISASI FOKUS PULAU SAPUDI - JADWAL KHOTMIL QUR\'AN',
+        subtitle: 'Daftar Rotasi Tuan Rumah Khotmil Al-Qur\'an',
+        headers: jadwalHeaders,
+        rows: jadwalRows
+      },
+      {
+        sheetName: 'Absensi 30 Juz',
+        title: 'ORGANISASI FOKUS PULAU SAPUDI - ABSENSI & PEMBAGIAN JUZ',
+        subtitle: 'Rekap Pembaca 30 Juz Khotmil Al-Qur\'an FOKUS PULAU SAPUDI',
+        headers: absenHeaders,
+        rows: absenRows
+      }
+    ]);
+
+    onNotify('Export Buku Lengkap Berhasil', 'Seluruh data Jadwal dan Absensi Khotmil berhasil diexport dalam satu berkas Excel (.xlsx).');
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target?.result as string;
-      if (!text) return;
+    parseExcelFile(
+      file,
+      (dataRows) => {
+        let count = 0;
+        if (activeSubTab === 'jadwal') {
+          const newRows: KhotmilJadwalRow[] = [];
+          dataRows.forEach((cols, idx) => {
+            if (cols.length >= 2) {
+              const hasNoCol = !isNaN(Number(cols[0]));
+              const offset = hasNoCol ? 1 : 0;
 
-      const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
-      if (lines.length < 2) {
-        onNotify('Import Gagal', 'File CSV/Excel kosong atau tidak memiliki baris data.');
-        return;
-      }
+              const hariTanggal = cols[offset] || '15 Ramadhan 1447 H';
+              const tuanRumah = cols[offset + 1] || 'H. Ahmad';
+              const alamat = cols[offset + 2] || 'Sapudi';
+              const noHandphone = cols[offset + 3] || '-';
+              const infaqVal = cols[offset + 4] ? Number(cols[offset + 4].replace(/[^0-9]/g, '')) : 500000;
 
-      const sep = lines[0].includes(';') ? ';' : ',';
-      let count = 0;
+              newRows.push({
+                id: 'imp-j-' + Date.now() + '-' + idx,
+                no: jadwal.length + idx + 1,
+                hariTanggal,
+                tuanRumah,
+                alamat,
+                noHandphone,
+                infaq: infaqVal || 500000
+              });
+              count++;
+            }
+          });
+          setJadwal([...newRows, ...jadwal]);
+          onNotify('Import Excel Berhasil', `${count} data jadwal khotmil berhasil di-import dari Excel.`);
+        } else {
+          const newRows: KhotmilAbsenRow[] = [];
+          dataRows.forEach((cols, idx) => {
+            if (cols.length >= 2) {
+              const hasNoCol = !isNaN(Number(cols[0]));
+              const offset = hasNoCol ? 1 : 0;
 
-      if (activeSubTab === 'jadwal') {
-        const newRows: KhotmilJadwalRow[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].split(sep).map(c => c.replace(/^["']|["']$/g, '').trim());
-          if (cols.length >= 2) {
-            const hasNoCol = !isNaN(Number(cols[0]));
-            const offset = hasNoCol ? 1 : 0;
+              const nis = cols[offset] || `2026${String(idx).padStart(3, '0')}`;
+              const nama = cols[offset + 1] || 'Peserta';
+              const alamat = cols[offset + 2] || 'Sapudi';
+              const juzAlQuran = cols[offset + 3] || 'Juz ' + (idx % 30 + 1);
+              const keterangan = cols[offset + 4] || 'Hadir / Alpa';
 
-            const hariTanggal = cols[offset] || '15 Ramadhan 1447 H';
-            const tuanRumah = cols[offset + 1] || 'H. Ahmad';
-            const alamat = cols[offset + 2] || 'Sapudi';
-            const noHandphone = cols[offset + 3] || '-';
-            const infaqVal = cols[offset + 4] ? Number(cols[offset + 4].replace(/[^0-9]/g, '')) : 500000;
-
-            newRows.push({
-              id: 'imp-j-' + Date.now() + '-' + i,
-              no: jadwal.length + i,
-              hariTanggal,
-              tuanRumah,
-              alamat,
-              noHandphone,
-              infaq: infaqVal || 500000
-            });
-            count++;
-          }
+              newRows.push({
+                id: 'imp-a-' + Date.now() + '-' + idx,
+                no: absen.length + idx + 1,
+                nis,
+                nama,
+                alamat,
+                juzAlQuran,
+                keterangan
+              });
+              count++;
+            }
+          });
+          setAbsen([...newRows, ...absen]);
+          onNotify('Import Excel Berhasil', `${count} data absensi khotmil berhasil di-import dari Excel.`);
         }
-        setJadwal([...newRows, ...jadwal]);
-        onNotify('Import Excel Berhasil', `${count} data jadwal khotmil berhasil di-import.`);
-      } else {
-        const newRows: KhotmilAbsenRow[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].split(sep).map(c => c.replace(/^["']|["']$/g, '').trim());
-          if (cols.length >= 2) {
-            const hasNoCol = !isNaN(Number(cols[0]));
-            const offset = hasNoCol ? 1 : 0;
 
-            const nis = cols[offset] || `2026${String(i).padStart(3, '0')}`;
-            const nama = cols[offset + 1] || 'Peserta';
-            const alamat = cols[offset + 2] || 'Sapudi';
-            const juzAlQuran = cols[offset + 3] || 'Juz ' + (i % 30 + 1);
-            const keterangan = cols[offset + 4] || 'Hadir / Mutqin';
-
-            newRows.push({
-              id: 'imp-a-' + Date.now() + '-' + i,
-              no: absen.length + i,
-              nis,
-              nama,
-              alamat,
-              juzAlQuran,
-              keterangan
-            });
-            count++;
-          }
-        }
-        setAbsen([...newRows, ...absen]);
-        onNotify('Import Excel Berhasil', `${count} data absensi khotmil berhasil di-import.`);
-      }
-
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    };
-
-    reader.readAsText(file);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      },
+      (err) => onNotify('Import Gagal', err)
+    );
   };
 
   return (
@@ -417,7 +551,10 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
       <div className="bg-white p-4 rounded-3xl shadow-sm border border-emerald-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex bg-emerald-50/80 p-1.5 rounded-2xl border border-emerald-100 gap-2 max-w-md w-full">
           <button
-            onClick={() => setActiveSubTab('jadwal')}
+            onClick={() => {
+              setActiveSubTab('jadwal');
+              setJadwalPage(1);
+            }}
             className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
               activeSubTab === 'jadwal'
                 ? 'bg-emerald-900 text-amber-200 shadow'
@@ -428,7 +565,10 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
             <span>Jadwal Kegiatan Wajib ({jadwal.length})</span>
           </button>
           <button
-            onClick={() => setActiveSubTab('absen')}
+            onClick={() => {
+              setActiveSubTab('absen');
+              setAbsenPage(1);
+            }}
             className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
               activeSubTab === 'absen'
                 ? 'bg-emerald-900 text-amber-200 shadow'
@@ -463,10 +603,19 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
           <button
             onClick={handleExportExcel}
             className="px-3 py-2 bg-emerald-800 hover:bg-emerald-900 text-amber-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
-            title="Export Data ke File Excel (CSV)"
+            title="Export Tab Aktif ke File Excel (.xlsx)"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-amber-300" />
             <span>Export Excel</span>
+          </button>
+
+          <button
+            onClick={handleExportAllWorkbook}
+            className="px-3 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+            title="Export Seluruh Jadwal & Absensi ke 1 File Excel (Multi-Sheet)"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-700" />
+            <span>Buku Lengkap (.xlsx)</span>
           </button>
 
           <div className="relative w-full sm:w-48">
@@ -477,7 +626,11 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
               type="text"
               placeholder="Cari..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={e => {
+                setSearchTerm(e.target.value);
+                setJadwalPage(1);
+                setAbsenPage(1);
+              }}
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-emerald-50/50 border border-emerald-200 rounded-xl text-emerald-950 placeholder-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-700"
             />
           </div>
@@ -502,6 +655,7 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                 <tr className="bg-emerald-100/60 text-emerald-950 font-bold border-b border-emerald-200">
                   <th className="p-3 text-center w-12">NO</th>
                   <th className="p-3">HARI / TANGGAL</th>
+                  <th className="p-3 text-center">PERIODE</th>
                   <th className="p-3">TUAN RUMAH</th>
                   <th className="p-3">ALAMAT</th>
                   <th className="p-3">NO. HANDPHONE</th>
@@ -512,15 +666,20 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
               <tbody className="divide-y divide-emerald-50 text-emerald-900">
                 {filteredJadwal.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-emerald-600">
+                    <td colSpan={8} className="p-8 text-center text-emerald-600">
                       Tidak ada data jadwal khotmil Qur'an yang sesuai dengan pencarian.
                     </td>
                   </tr>
                 ) : (
-                  filteredJadwal.map((item, index) => (
+                  paginatedJadwal.map((item, index) => (
                     <tr key={item.id} className="hover:bg-emerald-50/50 transition">
-                      <td className="p-3 text-center font-bold text-emerald-700">{index + 1}</td>
+                      <td className="p-3 text-center font-bold text-emerald-700">{(jadwalPage - 1) * jadwalPageSize + index + 1}</td>
                       <td className="p-3 font-semibold text-emerald-950">{item.hariTanggal}</td>
+                      <td className="p-3 text-center">
+                        <span className="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          {item.tahun || '2026'}
+                        </span>
+                      </td>
                       <td className="p-3 text-emerald-900 font-bold">{item.tuanRumah}</td>
                       <td className="p-3 text-emerald-700">{item.alamat}</td>
                       <td className="p-3 font-mono text-emerald-800">{item.noHandphone}</td>
@@ -554,6 +713,16 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
               </tbody>
             </table>
           </div>
+
+          {/* Jadwal Pagination */}
+          <Pagination
+            currentPage={jadwalPage}
+            totalItems={filteredJadwal.length}
+            pageSize={jadwalPageSize}
+            onPageChange={setJadwalPage}
+            onPageSizeChange={setJadwalPageSize}
+            itemLabel="jadwal"
+          />
         </div>
       ) : (
         <div className="bg-white rounded-3xl shadow-sm border border-emerald-100 overflow-hidden">
@@ -582,9 +751,9 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                     </td>
                   </tr>
                 ) : (
-                  filteredAbsen.map((item, index) => (
+                  paginatedAbsen.map((item, index) => (
                     <tr key={item.id} className="hover:bg-emerald-50/50 transition">
-                      <td className="p-3 text-center font-bold text-emerald-700">{index + 1}</td>
+                      <td className="p-3 text-center font-bold text-emerald-700">{(absenPage - 1) * absenPageSize + index + 1}</td>
                       <td className="p-3 font-mono font-bold text-emerald-950">{item.nis}</td>
                       <td className="p-3 font-semibold text-emerald-900">{item.nama}</td>
                       <td className="p-3 text-emerald-700">{item.alamat}</td>
@@ -612,6 +781,16 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
               </tbody>
             </table>
           </div>
+
+          {/* Absen Pagination */}
+          <Pagination
+            currentPage={absenPage}
+            totalItems={filteredAbsen.length}
+            pageSize={absenPageSize}
+            onPageChange={setAbsenPage}
+            onPageSizeChange={setAbsenPageSize}
+            itemLabel="peserta"
+          />
         </div>
       )}
 
@@ -629,16 +808,68 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
             </div>
 
             <form onSubmit={handleSaveJadwal} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold text-emerald-900 mb-1">Hari / Tanggal *</label>
-                <input
-                  type="text"
-                  required
-                  value={jadwalHariTanggal}
-                  onChange={e => setJadwalHariTanggal(e.target.value)}
-                  placeholder="Contoh: 15 Ramadhan 1447 H / Minggu"
-                  className="w-full p-2.5 bg-emerald-50/50 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-700 focus:outline-none"
-                />
+              <div className="space-y-2.5 bg-emerald-50/30 p-3 rounded-2xl border border-emerald-100/70">
+                <div>
+                  <label className="block text-xs font-bold text-emerald-900 mb-1">Pilih Tanggal Masehi</label>
+                  <input
+                    type="date"
+                    value={selDate}
+                    onChange={e => handleDateChange(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-emerald-900 mb-1">Hari</label>
+                    <select
+                      value={selDay}
+                      onChange={e => handleDayChange(e.target.value)}
+                      className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">-- Pilih Hari --</option>
+                      <option value="Senin">Senin</option>
+                      <option value="Selasa">Selasa</option>
+                      <option value="Rabu">Rabu</option>
+                      <option value="Kamis">Kamis</option>
+                      <option value="Jumat">Jumat</option>
+                      <option value="Sabtu">Sabtu</option>
+                      <option value="Minggu">Minggu</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-emerald-900 mb-1">Periode Tahun</label>
+                    <select
+                      value={formTahun}
+                      onChange={e => setFormTahun(e.target.value)}
+                      className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none cursor-pointer font-semibold text-emerald-950"
+                    >
+                      <option value="2026">2026 / 1448 H</option>
+                      <option value="2025">2025 / 1447 H</option>
+                      <option value="2024">2024 / 1446 H</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-emerald-900 mb-1">Tambahan Keterangan Hijriah (Opsional)</label>
+                  <input
+                    type="text"
+                    value={selHijri}
+                    onChange={e => handleHijriChange(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none"
+                    placeholder="Contoh: 15 Syawal 1448 H"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-emerald-950 mb-1">Hasil Gabungan Hari / Tanggal (Otomatis)</label>
+                  <input
+                    type="text"
+                    required
+                    value={jadwalHariTanggal}
+                    onChange={e => setJadwalHariTanggal(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-emerald-100/50 border border-emerald-200 rounded-xl font-bold text-emerald-950 focus:ring-1 focus:ring-emerald-700 focus:outline-none"
+                    placeholder="Contoh: Sabtu, 10 Syawal 1447 H"
+                  />
+                </div>
               </div>
 
               <div>
@@ -648,7 +879,7 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                   required
                   value={jadwalTuanRumah}
                   onChange={e => setJadwalTuanRumah(e.target.value)}
-                  placeholder="Contoh: Bpk. H. Mahmud / Ust. Abdullah"
+                  placeholder="Contoh: Maz Syaiful"
                   className="w-full p-2.5 bg-emerald-50/50 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-700 focus:outline-none"
                 />
               </div>
@@ -659,7 +890,7 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                   type="text"
                   value={jadwalAlamat}
                   onChange={e => setJadwalAlamat(e.target.value)}
-                  placeholder="Contoh: Dsn. Sumber Gayam Sapudi"
+                  placeholder="Contoh: Tarebung Gayam Sumenep"
                   className="w-full p-2.5 bg-emerald-50/50 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-700 focus:outline-none"
                 />
               </div>
@@ -670,7 +901,7 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                   type="text"
                   value={jadwalNoHp}
                   onChange={e => setJadwalNoHp(e.target.value)}
-                  placeholder="Contoh: 081234567890"
+                  placeholder="Contoh: 081231376394"
                   className="w-full p-2.5 bg-emerald-50/50 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-700 focus:outline-none"
                 />
               </div>
@@ -774,7 +1005,7 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                   type="text"
                   value={absenKet}
                   onChange={e => setAbsenKet(e.target.value)}
-                  placeholder="Contoh: Hadir / Mutqin, Izin, Sakit"
+                  placeholder="Contoh: Hadir / Alpa, Izin, Sakit"
                   className="w-full p-2.5 bg-emerald-50/50 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-700 focus:outline-none"
                 />
               </div>
@@ -879,7 +1110,7 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                     type="text"
                     value={sign2Title}
                     onChange={(e) => setSign2Title(e.target.value)}
-                    placeholder="Contoh: Ketua FOKUS Sapudi"
+                    placeholder="Contoh: Ketua FOKUS Pulau Sapudi"
                     className="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-700 focus:outline-none"
                     required
                   />
@@ -892,7 +1123,7 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                     type="text"
                     value={sign2Name}
                     onChange={(e) => setSign2Name(e.target.value)}
-                    placeholder="Contoh: UST. ZAINAL ABIDIN"
+                    placeholder="Contoh: Maz Syaiful"
                     className="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-amber-700 focus:outline-none"
                     required
                   />
@@ -921,18 +1152,23 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
 
       {/* Print Jadwal Modal */}
       {showPrintJadwal && (
-        <PrintModal title="Jadwal Resmi Kegiatan Wajib Khotmil Qur'an" onClose={() => setShowPrintJadwal(false)}>
+        <PrintModal 
+          title="Jadwal Resmi Kegiatan Wajib Khotmil Qur'an" 
+          onClose={() => setShowPrintJadwal(false)}
+          orgProfile={orgProfile}
+          logoUrl={logoUrl}
+        >
           <div className="text-center space-y-4">
             <div className="flex justify-center items-center gap-3 mb-2">
               <div className="w-12 h-12 bg-white rounded-full border border-amber-400 overflow-hidden shadow-xs">
-                <img src="/logo.jpg" alt="Logo Fokus" className="w-full h-full object-cover" />
+                <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Logo Fokus" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
               </div>
               <div className="text-left">
                 <h2 className="text-lg font-serif font-bold text-emerald-950">MANAJEMEN FOKUS SAPUDI</h2>
                 <p className="text-xs font-bold text-emerald-800">JADWAL KEGIATAN WAJIB KHOTMIL QUR'AN</p>
               </div>
             </div>
-            <p className="text-xs text-emerald-700">Tahun Anggaran / Periode Ramadhan 1447 H</p>
+            <p className="text-xs text-emerald-700">Tahun Anggaran / Periode Ramadhan 1448 H</p>
 
             <div className="border-t border-b border-emerald-200 py-4 my-4 text-left">
               <table className="w-full text-xs">
@@ -970,8 +1206,8 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                 <p className="font-bold underline text-emerald-950 uppercase">({sign1Name})</p>
               </div>
               <div className="text-center">
-                <div className="w-12 h-12 rounded-full border border-amber-500 overflow-hidden shadow-xs mx-auto mb-0.5">
-                  <img src="/logo.jpg" alt="Stempel Fokus" className="w-full h-full object-cover" />
+                <div className="w-12 h-12 rounded-full border border-amber-500 overflow-hidden shadow-xs mx-auto mb-0.5 bg-white">
+                  <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Stempel Fokus" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
                 </div>
                 <p className="text-[9px] text-emerald-800 font-bold uppercase tracking-widest">STEMPEL RESMI</p>
               </div>
@@ -986,11 +1222,16 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
 
       {/* Print Absen Modal */}
       {showPrintAbsen && (
-        <PrintModal title="Lembar Absensi Kehadiran Khotmil Qur'an" onClose={() => setShowPrintAbsen(false)}>
+        <PrintModal 
+          title="Lembar Absensi Kehadiran Khotmil Qur'an" 
+          onClose={() => setShowPrintAbsen(false)}
+          orgProfile={orgProfile}
+          logoUrl={logoUrl}
+        >
           <div className="text-center space-y-4">
             <div className="flex justify-center items-center gap-3 mb-2">
               <div className="w-12 h-12 bg-white rounded-full border border-amber-400 overflow-hidden shadow-xs">
-                <img src="/logo.jpg" alt="Logo Fokus" className="w-full h-full object-cover" />
+                <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Logo Fokus" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
               </div>
               <div className="text-left">
                 <h2 className="text-lg font-serif font-bold text-emerald-950">MANAJEMEN FOKUS SAPUDI</h2>
@@ -1031,8 +1272,8 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
                 <p className="font-bold underline text-emerald-950 uppercase">({sign1Name})</p>
               </div>
               <div className="text-center">
-                <div className="w-12 h-12 rounded-full border border-amber-500 overflow-hidden shadow-xs mx-auto mb-0.5">
-                  <img src="/logo.jpg" alt="Stempel Fokus" className="w-full h-full object-cover" />
+                <div className="w-12 h-12 rounded-full border border-amber-500 overflow-hidden shadow-xs mx-auto mb-0.5 bg-white">
+                  <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Stempel Fokus" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
                 </div>
                 <p className="text-[9px] text-emerald-800 font-bold uppercase tracking-widest">STEMPEL RESMI</p>
               </div>
@@ -1050,22 +1291,24 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
         <PrintModal
           title={`Lembar Jadwal Pelaksanaan - ${selectedUndangan.tuanRumah}`}
           onClose={() => setSelectedUndangan(null)}
+          orgProfile={orgProfile}
+          logoUrl={logoUrl}
         >
           <div className="p-6 bg-white text-emerald-950 font-serif border border-emerald-200 rounded-2xl shadow-sm space-y-5 text-xs max-w-2xl mx-auto">
             {/* Kop Surat Header */}
             <div className="flex items-center gap-4 pb-4 border-b-2 border-emerald-900">
               <div className="w-16 h-16 bg-white rounded-full border-2 border-amber-400 overflow-hidden shrink-0 shadow-xs">
-                <img src="/logo.jpg" alt="Logo Fokus" className="w-full h-full object-cover" />
+                <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Logo" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
               </div>
               <div className="flex-1 text-center pr-10">
                 <h2 className="text-base font-bold text-emerald-950 uppercase tracking-wide">
-                  FORUM KOMUNIKASI SANTRI (FOKUS)
+                  {orgProfile?.namaOrganisasi || 'FORUM KOMUNIKASI SANTRI (FOKUS)'}
                 </h2>
                 <h3 className="text-xs font-bold text-amber-700 uppercase tracking-widest mt-0.5">
-                  MANAJEMEN FOKUS SAPUDI
+                  LEMBAR RESMI KEGIATAN KHOTMIL QUR'AN
                 </h3>
                 <p className="text-[10px] font-sans text-emerald-800 mt-1">
-                  Sekretariat Utama: Pulau Sapudi, Kab. Sumenep, Jawa Timur | Telp/WA: {selectedUndangan.noHandphone !== '-' ? selectedUndangan.noHandphone : '0812-3456-7890'}
+                  Sekretariat: {orgProfile?.alamatSekretariat || 'Jl. Sawah Seribu No. 01 Ds. Tarebung, Kec. Gayam Kab. Sumenep, Jawa Timur'} | Telp/WA: {selectedUndangan.noHandphone !== '-' ? selectedUndangan.noHandphone : (orgProfile?.noTelepon || '0812-3137-6394')}
                 </p>
               </div>
             </div>
@@ -1128,8 +1371,8 @@ export const KhotmilQuranView: React.FC<KhotmilQuranViewProps> = ({ onNotify }) 
               </div>
 
               <div className="text-center">
-                <div className="w-14 h-14 rounded-full border-2 border-amber-500 overflow-hidden shadow-xs mx-auto mb-1">
-                  <img src="/logo.jpg" alt="Stempel Fokus" className="w-full h-full object-cover" />
+                <div className="w-14 h-14 rounded-full border-2 border-amber-500 overflow-hidden shadow-xs mx-auto mb-1 bg-white">
+                  <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Stempel Fokus" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
                 </div>
                 <p className="text-[10px] text-emerald-800 font-bold uppercase tracking-widest">STEMPEL RESMI</p>
               </div>

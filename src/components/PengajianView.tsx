@@ -1,18 +1,34 @@
 import React, { useState, useRef } from 'react';
-import { ExpedisiRow } from '../types';
+import { ExpedisiRow, OrganizationProfile } from '../types';
 import { initialExpedisiRows } from '../data/initialData';
 import {
   BookOpen, Plus, Search, Trash2, Upload, Download, FileSpreadsheet, Printer, Edit3
 } from 'lucide-react';
 import { PrintModal } from './PrintModal';
+import { Pagination } from './Pagination';
 import { downloadCsvTemplate, exportToExcel, parseExcelFile } from '../utils/excelUtils';
+import { matchesYear } from '../utils/filterUtils';
 
 interface PengajianViewProps {
+  expedisi?: ExpedisiRow[];
+  setExpedisi?: React.Dispatch<React.SetStateAction<ExpedisiRow[]>>;
   onNotify: (title: string, message: string) => void;
+  selectedYear?: string;
+  orgProfile?: OrganizationProfile;
+  logoUrl?: string;
 }
 
-export const PengajianView: React.FC<PengajianViewProps> = ({ onNotify }) => {
-  const [expedisi, setExpedisi] = useState<ExpedisiRow[]>(initialExpedisiRows);
+export const PengajianView: React.FC<PengajianViewProps> = ({ 
+  expedisi: propExpedisi, 
+  setExpedisi: propSetExpedisi, 
+  onNotify, 
+  selectedYear = 'Semua',
+  orgProfile,
+  logoUrl
+}) => {
+  const [localExpedisi, setLocalExpedisi] = useState<ExpedisiRow[]>(initialExpedisiRows);
+  const expedisi = propExpedisi || localExpedisi;
+  const setExpedisi = propSetExpedisi || setLocalExpedisi;
   const [activeTab, setActiveTab] = useState<'undangan_vip' | 'undangan_umum'>('undangan_vip');
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -28,12 +44,18 @@ export const PengajianView: React.FC<PengajianViewProps> = ({ onNotify }) => {
   const [newKet, setNewKet] = useState('');
   const [newBerkas, setNewBerkas] = useState('');
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   const filtered = expedisi.filter(item =>
     item.kategoriExpedisi === activeTab &&
+    matchesYear(item, selectedYear) &&
     (item.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
      item.instansiJabatan.toLowerCase().includes(searchTerm.toLowerCase()) ||
      item.alamat.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const paginatedList = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleOpenAddModal = () => {
     setEditingItem(null);
@@ -81,7 +103,8 @@ export const PengajianView: React.FC<PengajianViewProps> = ({ onNotify }) => {
         alamat: newAlamat,
         noHandphone: newHp,
         keterangan: newKet,
-        berkasUrl: newBerkas || 'undangan_berkas_' + Date.now() + '.pdf'
+        berkasUrl: newBerkas || 'undangan_berkas_' + Date.now() + '.pdf',
+        tahun: selectedYear !== 'Semua' ? selectedYear : '2026'
       };
       setExpedisi([newItem, ...expedisi]);
       setShowAddModal(false);
@@ -105,13 +128,12 @@ export const PengajianView: React.FC<PengajianViewProps> = ({ onNotify }) => {
   // Excel Handlers
   const handleDownloadTemplate = () => {
     const headers = ['NO', 'NAMA PENERIMA', 'INSTANSI / JABATAN', 'ALAMAT', 'NO HANDPHONE', 'KETERANGAN'];
-    const sample = [1, 'KH. Maimun Zubair', 'Kyai / Tokoh Masyarakat', 'Gayam Sapudi', '081987654321', 'Siap Hadir VIP'];
     downloadCsvTemplate(`Pengajian_${activeTab}`, headers, sample);
     onNotify('Template Didownload', 'Template Excel expedisi pengajian berhasil diunduh.');
   };
 
   const handleExportExcel = () => {
-    const headers = ['NO', 'NAMA PENERIMA', 'INSTANSI / JABATAN', 'ALAMAT', 'NO HANDPHONE', 'KETERANGAN'];
+    const headers = ['NO', 'NAMA PENERIMA', 'INSTANSI / JABATAN', 'ALAMAT LENGKAP', 'NO HANDPHONE / WA', 'KETERANGAN STATUS'];
     const rows = filtered.map((item, idx) => [
       idx + 1,
       item.nama,
@@ -120,8 +142,17 @@ export const PengajianView: React.FC<PengajianViewProps> = ({ onNotify }) => {
       item.noHandphone,
       item.keterangan
     ]);
-    exportToExcel(`Expedisi_Pengajian_${activeTab}`, headers, rows);
-    onNotify('Export Excel Berhasil', 'Data expedisi pengajian berhasil diexport.');
+    exportToExcel(
+      `Expedisi_Pengajian_${activeTab}`,
+      headers,
+      rows,
+      {
+        title: `ORGANISASI FOKUS SAPUDI - EXPEDISI PENGAJIAN (${activeTab === 'undangan_vip' ? 'UNDANGAN VIP' : 'UNDANGAN UMUM'})`,
+        subtitle: 'Daftar Distribusi Surat Undangan & Konfirmasi Kehadiran Tokoh / Jamaah',
+        sheetName: activeTab === 'undangan_vip' ? 'Undangan VIP' : 'Undangan Umum'
+      }
+    );
+    onNotify('Export Excel Berhasil', 'Data expedisi pengajian berhasil diexport ke Excel (.xlsx).');
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -242,7 +273,10 @@ export const PengajianView: React.FC<PengajianViewProps> = ({ onNotify }) => {
               type="text"
               placeholder="Cari penerima / alamat..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={e => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full pl-9 pr-4 py-1.5 text-xs bg-teal-800/80 border border-teal-700 rounded-xl text-white placeholder-teal-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
             />
           </div>
@@ -255,7 +289,10 @@ export const PengajianView: React.FC<PengajianViewProps> = ({ onNotify }) => {
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => {
+                setActiveTab(tab.id as any);
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
                 activeTab === tab.id
                   ? 'bg-teal-900 text-amber-200 shadow-sm'
@@ -289,42 +326,55 @@ export const PengajianView: React.FC<PengajianViewProps> = ({ onNotify }) => {
                   </td>
                 </tr>
               ) : (
-                filtered.map((item, index) => (
-                  <tr key={item.id} className="hover:bg-emerald-50/50 transition">
-                    <td className="p-3 text-center font-bold text-teal-700">{index + 1}</td>
-                    <td className="p-3 font-semibold text-emerald-950">{item.nama}</td>
-                    <td className="p-3 text-emerald-800">{item.instansiJabatan}</td>
-                    <td className="p-3 text-emerald-700">{item.alamat}</td>
-                    <td className="p-3 font-mono text-emerald-800">{item.noHandphone}</td>
-                    <td className="p-3 text-emerald-700">{item.keterangan}</td>
-                    <td className="p-3 text-center">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-teal-100 text-teal-800 rounded-lg text-[10px] font-medium">
-                        <Upload className="w-3 h-3 text-teal-600" />
-                        <span>{item.berkasUrl || 'Upload'}</span>
-                      </span>
-                    </td>
-                    <td className="p-3 text-center space-x-1 whitespace-nowrap">
-                      <button
-                        onClick={() => handleOpenEditModal(item)}
-                        className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg transition inline-block"
-                        title="Edit Data Expedisi Undangan"
-                      >
-                        <Edit3 className="w-4 h-4 text-emerald-800" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition inline-block"
-                        title="Hapus Data"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                paginatedList.map((item, index) => {
+                  const globalIndex = (currentPage - 1) * pageSize + index + 1;
+                  return (
+                    <tr key={item.id} className="hover:bg-emerald-50/50 transition">
+                      <td className="p-3 text-center font-bold text-teal-700">{globalIndex}</td>
+                      <td className="p-3 font-semibold text-emerald-950">{item.nama}</td>
+                      <td className="p-3 text-emerald-800">{item.instansiJabatan}</td>
+                      <td className="p-3 text-emerald-700">{item.alamat}</td>
+                      <td className="p-3 font-mono text-emerald-800">{item.noHandphone}</td>
+                      <td className="p-3 text-emerald-700">{item.keterangan}</td>
+                      <td className="p-3 text-center">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-teal-100 text-teal-800 rounded-lg text-[10px] font-medium">
+                          <Upload className="w-3 h-3 text-teal-600" />
+                          <span>{item.berkasUrl || 'Upload'}</span>
+                        </span>
+                      </td>
+                      <td className="p-3 text-center space-x-1 whitespace-nowrap">
+                        <button
+                          onClick={() => handleOpenEditModal(item)}
+                          className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg transition inline-block"
+                          title="Edit Data Expedisi Undangan"
+                        >
+                          <Edit3 className="w-4 h-4 text-emerald-800" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition inline-block"
+                          title="Hapus Data"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filtered.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          itemLabel="undangan"
+        />
       </div>
 
       {showAddModal && (
@@ -429,11 +479,33 @@ export const PengajianView: React.FC<PengajianViewProps> = ({ onNotify }) => {
 
       {/* Print PDF Modal */}
       {showPrintModal && (
-        <PrintModal title={`Lembar Expedisi Pengajian - ${activeTab.toUpperCase()}`} onClose={() => setShowPrintModal(false)}>
-          <div className="text-center space-y-4 font-sans text-xs">
-            <h2 className="text-base font-serif font-bold text-emerald-950 uppercase">
-              DAFTAR EXPEDISI PENGAJIAN {activeTab.replace(/_/g, ' ').toUpperCase()}
-            </h2>
+        <PrintModal 
+          title={`Lembar Expedisi Pengajian - ${activeTab.toUpperCase()}`} 
+          onClose={() => setShowPrintModal(false)}
+          orgProfile={orgProfile}
+          logoUrl={logoUrl}
+        >
+          <div className="space-y-4 font-sans text-xs">
+            {/* Official Kop Surat */}
+            <div className="flex items-center gap-4 pb-4 border-b-2 border-emerald-900">
+              <div className="w-14 h-14 bg-white rounded-full border border-amber-400 overflow-hidden shrink-0 shadow-xs p-0.5">
+                <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Logo" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
+              </div>
+              <div className="flex-1 text-center pr-6">
+                <h2 className="text-sm sm:text-base font-serif font-bold text-emerald-950 uppercase tracking-wide">
+                  {orgProfile?.namaOrganisasi || 'FORUM KOMUNIKASI SANTRI (FOKUS) SAPUDI'}
+                </h2>
+                <p className="text-[10px] text-emerald-800 mt-0.5 font-sans">
+                  {orgProfile?.alamatSekretariat || 'Pulau Sapudi, Kab. Sumenep, Jawa Timur'} | Telp/WA: {orgProfile?.noTelepon || '+62 812-3456-7890'}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <h2 className="text-base font-serif font-bold text-emerald-950 uppercase">
+                DAFTAR EXPEDISI PENGAJIAN {activeTab.replace(/_/g, ' ').toUpperCase()}
+              </h2>
+            </div>
             <div className="border-t border-b border-emerald-200 py-3 text-left">
               <table className="w-full text-xs">
                 <thead>

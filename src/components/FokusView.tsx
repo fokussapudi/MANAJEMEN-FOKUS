@@ -1,26 +1,48 @@
 import React, { useState, useRef } from 'react';
-import { ExpedisiRow, AgendaItem } from '../types';
+import { ExpedisiRow, AgendaItem, OrganizationProfile } from '../types';
 import { initialFokusStats, initialExpedisiRows, initialAgendaList } from '../data/initialData';
 import {
   FileText, Plus, Search, Upload, Trash2, Calendar, FileSpreadsheet, Download, Printer, Edit3,
   CheckCircle2, XCircle, CheckSquare, Square, Filter, Clock, Sparkles
 } from 'lucide-react';
 import { PrintModal } from './PrintModal';
+import { Pagination } from './Pagination';
 import { downloadCsvTemplate, exportToExcel, parseExcelFile } from '../utils/excelUtils';
+import { matchesYear, formatGregorianIndo } from '../utils/filterUtils';
 
 interface FokusViewProps {
+  expedisi?: ExpedisiRow[];
+  setExpedisi?: React.Dispatch<React.SetStateAction<ExpedisiRow[]>>;
+  agendaList?: AgendaItem[];
+  setAgendaList?: React.Dispatch<React.SetStateAction<AgendaItem[]>>;
   onNotify: (title: string, message: string) => void;
+  selectedYear?: string;
+  orgProfile?: OrganizationProfile;
+  logoUrl?: string;
 }
 
-export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
+export const FokusView: React.FC<FokusViewProps> = ({ 
+  expedisi: propExpedisi, 
+  setExpedisi: propSetExpedisi, 
+  agendaList: propAgendaList, 
+  setAgendaList: propSetAgendaList, 
+  onNotify,
+  selectedYear = 'Semua',
+  orgProfile,
+  logoUrl
+}) => {
   const [stats, setStats] = useState(initialFokusStats);
-  const [expedisi, setExpedisi] = useState<ExpedisiRow[]>(initialExpedisiRows);
+  const [localExpedisi, setLocalExpedisi] = useState<ExpedisiRow[]>(initialExpedisiRows);
+  const expedisi = propExpedisi || localExpedisi;
+  const setExpedisi = propSetExpedisi || setLocalExpedisi;
   const [activeTab, setActiveTab] = useState<'rapat_pra_lokal' | 'rapat_pra_sahmasy' | 'opening_safari' | 'rapat_pasca_lokal' | 'rapat_pasca_sahmasy'>('rapat_pra_lokal');
   const [searchTerm, setSearchTerm] = useState('');
   const [showPrint, setShowPrint] = useState(false);
 
   // Agenda List State (40 items total)
-  const [agendaList, setAgendaList] = useState<AgendaItem[]>(initialAgendaList);
+  const [localAgendaList, setLocalAgendaList] = useState<AgendaItem[]>(initialAgendaList);
+  const agendaList = propAgendaList || localAgendaList;
+  const setAgendaList = propSetAgendaList || setLocalAgendaList;
   const [agendaFilterStatus, setAgendaFilterStatus] = useState<'semua' | 'terlaksana' | 'belum'>('semua');
   const [agendaFilterKategori, setAgendaFilterKategori] = useState<string>('semua');
   const [agendaSearch, setAgendaSearch] = useState('');
@@ -35,6 +57,70 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
   const [agendaPj, setAgendaPj] = useState('');
   const [agendaTerlaksana, setAgendaTerlaksana] = useState(false);
   const [agendaKet, setAgendaKet] = useState('');
+
+  const [formTahun, setFormTahun] = useState('2026');
+  const [selDay, setSelDay] = useState('');
+  const [selDate, setSelDate] = useState('');
+  const [selHijri, setSelHijri] = useState('');
+
+  const parseHariTanggal = (str: string) => {
+    let parsedDay = '';
+    let parsedHijri = '';
+    
+    const parts = str.split(',');
+    if (parts.length > 0) {
+      const possibleDay = parts[0].trim();
+      const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+      if (days.includes(possibleDay)) {
+        parsedDay = possibleDay;
+      }
+      
+      if (parts.length > 1) {
+        const dateAndHijri = parts[1].split('/');
+        if (dateAndHijri.length > 1) {
+          parsedHijri = dateAndHijri[1].trim();
+        } else {
+          const text = parts[1].trim();
+          if (text.endsWith('H') || text.includes('H')) {
+            parsedHijri = text;
+          }
+        }
+      }
+    }
+    return { parsedDay, parsedHijri };
+  };
+
+  const handleDateChange = (dateVal: string) => {
+    setSelDate(dateVal);
+    const { dayName, dateFormatted } = formatGregorianIndo(dateVal);
+    let dayToUse = dayName || selDay;
+    if (dayName) setSelDay(dayName);
+    
+    const combined = `${dayToUse ? `${dayToUse}, ` : ''}${dateFormatted}${selHijri ? ` / ${selHijri}` : ''}`;
+    setAgendaTanggal(combined);
+  };
+
+  const handleDayChange = (dayVal: string) => {
+    setSelDay(dayVal);
+    let datePart = '';
+    if (selDate) {
+      const { dateFormatted } = formatGregorianIndo(selDate);
+      datePart = dateFormatted;
+    }
+    const combined = `${dayVal ? `${dayVal}, ` : ''}${datePart}${selHijri ? ` / ${selHijri}` : ''}`;
+    setAgendaTanggal(combined);
+  };
+
+  const handleHijriChange = (hijriVal: string) => {
+    setSelHijri(hijriVal);
+    let datePart = '';
+    if (selDate) {
+      const { dateFormatted } = formatGregorianIndo(selDate);
+      datePart = dateFormatted;
+    }
+    const combined = `${selDay ? `${selDay}, ` : ''}${datePart}${hijriVal ? ` / ${hijriVal}` : ''}`;
+    setAgendaTanggal(combined);
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,6 +179,10 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
     setAgendaPj('');
     setAgendaTerlaksana(false);
     setAgendaKet('');
+    setFormTahun(selectedYear !== 'Semua' ? selectedYear : '2026');
+    setSelDay('');
+    setSelDate('');
+    setSelHijri('');
     setShowAddAgendaModal(true);
   };
 
@@ -104,6 +194,12 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
     setAgendaPj(item.penanggungJawab);
     setAgendaTerlaksana(item.terlaksana);
     setAgendaKet(item.keterangan);
+    setFormTahun(item.tahun || '2026');
+    
+    const parsed = parseHariTanggal(item.tanggalPelaksanaan);
+    setSelDay(parsed.parsedDay);
+    setSelHijri(parsed.parsedHijri);
+    setSelDate('');
     setShowAddAgendaModal(true);
   };
 
@@ -117,7 +213,8 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
         tanggalPelaksanaan: agendaTanggal,
         penanggungJawab: agendaPj,
         terlaksana: agendaTerlaksana,
-        keterangan: agendaKet
+        keterangan: agendaKet,
+        tahun: formTahun
       } : a));
       setShowAddAgendaModal(false);
       onNotify('Agenda Diperbarui', `Rencana kegiatan "${agendaNama}" berhasil diperbarui.`);
@@ -130,7 +227,8 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
         tanggalPelaksanaan: agendaTanggal || 'Terjadwal',
         penanggungJawab: agendaPj || 'Pengurus Fokus',
         terlaksana: agendaTerlaksana,
-        keterangan: agendaKet || 'Direncana'
+        keterangan: agendaKet || 'Direncana',
+        tahun: formTahun
       };
       setAgendaList([...agendaList, newItem]);
       setShowAddAgendaModal(false);
@@ -146,6 +244,9 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
   };
 
   // Filtered Agendas
+  const [agendaPage, setAgendaPage] = useState(1);
+  const [agendaPageSize, setAgendaPageSize] = useState(10);
+
   const filteredAgendas = agendaList.filter(item => {
     const matchesStatus =
       agendaFilterStatus === 'semua' ? true :
@@ -160,16 +261,26 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
       item.kategori.toLowerCase().includes(agendaSearch.toLowerCase()) ||
       item.keterangan.toLowerCase().includes(agendaSearch.toLowerCase());
 
-    return matchesStatus && matchesCategory && matchesSearch;
+    const matchesYearFilter = matchesYear(item, selectedYear);
+
+    return matchesStatus && matchesCategory && matchesSearch && matchesYearFilter;
   });
 
+  const paginatedAgendas = filteredAgendas.slice((agendaPage - 1) * agendaPageSize, agendaPage * agendaPageSize);
+
   // Expedisi Filter
+  const [expedisiPage, setExpedisiPage] = useState(1);
+  const [expedisiPageSize, setExpedisiPageSize] = useState(10);
+
   const filteredExpedisi = expedisi.filter(item =>
     item.kategoriExpedisi === activeTab &&
+    matchesYear(item, selectedYear) &&
     (item.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
      item.instansiJabatan.toLowerCase().includes(searchTerm.toLowerCase()) ||
      item.alamat.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const paginatedExpedisi = filteredExpedisi.slice((expedisiPage - 1) * expedisiPageSize, expedisiPage * expedisiPageSize);
 
   const handleOpenAddModal = () => {
     setEditingItem(null);
@@ -217,7 +328,8 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
         alamat: newAlamat,
         noHandphone: newHp,
         keterangan: newKet,
-        berkasUrl: newBerkas || 'berkas_upload_' + Date.now() + '.pdf'
+        berkasUrl: newBerkas || 'berkas_upload_' + Date.now() + '.pdf',
+        tahun: selectedYear !== 'Semua' ? selectedYear : '2026'
       };
       setExpedisi([newItem, ...expedisi]);
       setShowAddModal(false);
@@ -241,13 +353,12 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
   // Excel handlers
   const handleDownloadTemplate = () => {
     const headers = ['NO', 'NAMA', 'INSTANSI / JABATAN', 'ALAMAT', 'NO HANDPHONE', 'KETERANGAN'];
-    const sample = [1, 'KH. Abdullah Faqih', 'Ketua Panitia Lokal', 'Gayam Sapudi', '081234567890', 'Undangan Diterima'];
     downloadCsvTemplate(`Fokus_Expedisi_${activeTab}`, headers, sample);
     onNotify('Template Didownload', 'Template Excel expedisi berhasil diunduh.');
   };
 
   const handleExportExcel = () => {
-    const headers = ['NO', 'NAMA', 'INSTANSI / JABATAN', 'ALAMAT', 'NO HANDPHONE', 'KETERANGAN'];
+    const headers = ['NO', 'NAMA PENERIMA / INSTANSI', 'JABATAN', 'ALAMAT LENGKAP', 'NO HANDPHONE / WA', 'KETERANGAN STATUS'];
     const rows = filteredExpedisi.map((item, idx) => [
       idx + 1,
       item.nama,
@@ -256,23 +367,41 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
       item.noHandphone,
       item.keterangan
     ]);
-    exportToExcel(`Expedisi_${activeTab}`, headers, rows);
-    onNotify('Export Excel Berhasil', 'Data expedisi berhasil diexport ke Excel.');
+    exportToExcel(
+      `Expedisi_${activeTab}`,
+      headers,
+      rows,
+      {
+        title: `ORGANISASI FOKUS SAPUDI - EXPEDISI SURAT (${activeTab.toUpperCase()})`,
+        subtitle: 'Daftar Penerima Surat Dinas & Ekspedisi Pengurus FOKUS',
+        sheetName: `Expedisi ${activeTab}`
+      }
+    );
+    onNotify('Export Excel Berhasil', 'Data expedisi berhasil diexport ke Excel (.xlsx).');
   };
 
   const handleExportAgendaExcel = () => {
-    const headers = ['NO', 'KATEGORI', 'NAMA RENCANA KEGIATAN', 'TANGGAL PELAKSANAAN', 'PENANGGUNG JAWAB', 'STATUS TERLAKSANA', 'KETERANGAN'];
+    const headers = ['NO', 'KATEGORI PROGRAM', 'NAMA RENCANA KEGIATAN', 'TANGGAL ESTIMASI', 'PENANGGUNG JAWAB', 'STATUS KETERCAPAIAN', 'KETERANGAN'];
     const rows = filteredAgendas.map((item, idx) => [
       idx + 1,
       item.kategori,
       item.namaKegiatan,
       item.tanggalPelaksanaan,
       item.penanggungJawab,
-      item.terlaksana ? 'TERLAKSANA (✔)' : 'BELUM TERLAKSANA (☐)',
+      item.terlaksana ? 'TERLAKSANA' : 'BELUM TERLAKSANA',
       item.keterangan
     ]);
-    exportToExcel(`Rencana_Kegiatan_Fokus_40_Agenda`, headers, rows);
-    onNotify('Export Excel Agenda Berhasil', 'Data 40 Agenda Rencana Kegiatan berhasil diexport.');
+    exportToExcel(
+      `Rencana_Kegiatan_Fokus_40_Agenda`,
+      headers,
+      rows,
+      {
+        title: 'ORGANISASI FOKUS SAPUDI - MASTER 40 AGENDA KERJA & RENCANA KEGIATAN',
+        subtitle: 'Matriks Rencana Program Kerja, Jadwal Pelaksanaan & Penanggung Jawab Bidang',
+        sheetName: '40 Agenda Kerja'
+      }
+    );
+    onNotify('Export Excel Agenda Berhasil', 'Data 40 Agenda Rencana Kegiatan berhasil diexport ke Excel (.xlsx).');
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -530,7 +659,7 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
           {/* Status Tabs */}
           <div className="flex flex-wrap gap-1 items-center">
             <button
-              onClick={() => setAgendaFilterStatus('semua')}
+              onClick={() => { setAgendaFilterStatus('semua'); setAgendaPage(1); }}
               className={`px-3.5 py-1.5 rounded-xl font-bold transition ${
                 agendaFilterStatus === 'semua'
                   ? 'bg-emerald-900 text-amber-300 shadow-sm'
@@ -540,7 +669,7 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
               Semua Agenda ({totalAgendaCount})
             </button>
             <button
-              onClick={() => setAgendaFilterStatus('terlaksana')}
+              onClick={() => { setAgendaFilterStatus('terlaksana'); setAgendaPage(1); }}
               className={`px-3.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${
                 agendaFilterStatus === 'terlaksana'
                   ? 'bg-emerald-800 text-white shadow-sm'
@@ -551,7 +680,7 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
               <span>Terlaksana (✔ {totalTerlaksanaCount})</span>
             </button>
             <button
-              onClick={() => setAgendaFilterStatus('belum')}
+              onClick={() => { setAgendaFilterStatus('belum'); setAgendaPage(1); }}
               className={`px-3.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 ${
                 agendaFilterStatus === 'belum'
                   ? 'bg-amber-600 text-white shadow-sm'
@@ -567,7 +696,10 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
           <div className="flex items-center gap-2 w-full md:w-auto">
             <select
               value={agendaFilterKategori}
-              onChange={e => setAgendaFilterKategori(e.target.value)}
+              onChange={e => {
+                setAgendaFilterKategori(e.target.value);
+                setAgendaPage(1);
+              }}
               className="p-1.5 bg-white border border-emerald-200 rounded-xl text-xs text-emerald-900 focus:ring-2 focus:ring-emerald-600 focus:outline-none"
             >
               <option value="semua">-- Semua Kategori --</option>
@@ -584,7 +716,10 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
                 type="text"
                 placeholder="Cari agenda..."
                 value={agendaSearch}
-                onChange={e => setAgendaSearch(e.target.value)}
+                onChange={e => {
+                  setAgendaSearch(e.target.value);
+                  setAgendaPage(1);
+                }}
                 className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-emerald-200 rounded-xl text-emerald-950 placeholder-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
               />
             </div>
@@ -615,83 +750,96 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
                   </td>
                 </tr>
               ) : (
-                filteredAgendas.map((item, index) => (
-                  <tr
-                    key={item.id}
-                    className={`transition hover:bg-emerald-50/60 ${
-                      item.terlaksana ? 'bg-emerald-50/20' : 'bg-amber-50/20'
-                    }`}
-                  >
-                    {/* Centang Button Column */}
-                    <td className="p-3 text-center">
-                      <button
-                        onClick={() => handleToggleTerlaksana(item.id)}
-                        className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm mx-auto w-full ${
-                          item.terlaksana
-                            ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                            : 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
-                        }`}
-                        title={item.terlaksana ? 'Klik untuk mengubah jadi Belum Terlaksana' : 'Klik untuk mengubah jadi Terlaksana'}
-                      >
-                        {item.terlaksana ? (
-                          <>
-                            <CheckSquare className="w-4 h-4 text-amber-300" />
-                            <span>Terlaksana</span>
-                          </>
-                        ) : (
-                          <>
-                            <Square className="w-4 h-4 text-amber-800" />
-                            <span>Belum</span>
-                          </>
-                        )}
-                      </button>
-                    </td>
+                paginatedAgendas.map((item, index) => {
+                  const globalIdx = (agendaPage - 1) * agendaPageSize + index + 1;
+                  return (
+                    <tr
+                      key={item.id}
+                      className={`transition hover:bg-emerald-50/60 ${
+                        item.terlaksana ? 'bg-emerald-50/20' : 'bg-amber-50/20'
+                      }`}
+                    >
+                      {/* Centang Button Column */}
+                      <td className="p-3 text-center">
+                        <button
+                          onClick={() => handleToggleTerlaksana(item.id)}
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm mx-auto w-full ${
+                            item.terlaksana
+                              ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                              : 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
+                          }`}
+                          title={item.terlaksana ? 'Klik untuk mengubah jadi Belum Terlaksana' : 'Klik untuk mengubah jadi Terlaksana'}
+                        >
+                          {item.terlaksana ? (
+                            <>
+                              <CheckSquare className="w-4 h-4 text-amber-300" />
+                              <span>Terlaksana</span>
+                            </>
+                          ) : (
+                            <>
+                              <Square className="w-4 h-4 text-amber-800" />
+                              <span>Belum</span>
+                            </>
+                          )}
+                        </button>
+                      </td>
 
-                    <td className="p-3 text-center font-bold text-emerald-700">{index + 1}</td>
-                    <td className="p-3">
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 font-bold text-[10px]">
-                        {item.kategori}
-                      </span>
-                    </td>
-                    <td className="p-3 font-semibold text-emerald-950">{item.namaKegiatan}</td>
-                    <td className="p-3 text-emerald-800 font-mono text-[11px]">{item.tanggalPelaksanaan}</td>
-                    <td className="p-3 text-emerald-900 font-medium">{item.penanggungJawab}</td>
-                    <td className="p-3 text-center">
-                      {item.terlaksana ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px]">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>Terlaksana</span>
+                      <td className="p-3 text-center font-bold text-emerald-700">{globalIdx}</td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 font-bold text-[10px]">
+                          {item.kategori}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-900 rounded-full font-bold text-[10px]">
-                          <Clock className="w-3 h-3 text-amber-700" />
-                          <span>Belum</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-3 text-emerald-700 text-[11px]">{item.keterangan}</td>
-                    <td className="p-3 text-center space-x-1 whitespace-nowrap">
-                      <button
-                        onClick={() => handleOpenEditAgenda(item)}
-                        className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg transition inline-block"
-                        title="Edit Agenda"
-                      >
-                        <Edit3 className="w-4 h-4 text-emerald-800" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteAgenda(item.id)}
-                        className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition inline-block"
-                        title="Hapus Agenda"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="p-3 font-semibold text-emerald-950">{item.namaKegiatan}</td>
+                      <td className="p-3 text-emerald-800 font-mono text-[11px]">{item.tanggalPelaksanaan}</td>
+                      <td className="p-3 text-emerald-900 font-medium">{item.penanggungJawab}</td>
+                      <td className="p-3 text-center">
+                        {item.terlaksana ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px]">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Terlaksana</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-900 rounded-full font-bold text-[10px]">
+                            <Clock className="w-3 h-3 text-amber-700" />
+                            <span>Belum</span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 text-emerald-700 text-[11px]">{item.keterangan}</td>
+                      <td className="p-3 text-center space-x-1 whitespace-nowrap">
+                        <button
+                          onClick={() => handleOpenEditAgenda(item)}
+                          className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg transition inline-block"
+                          title="Edit Agenda"
+                        >
+                          <Edit3 className="w-4 h-4 text-emerald-800" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAgenda(item.id)}
+                          className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition inline-block"
+                          title="Hapus Agenda"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Agenda Pagination */}
+        <Pagination
+          currentPage={agendaPage}
+          totalItems={filteredAgendas.length}
+          pageSize={agendaPageSize}
+          onPageChange={setAgendaPage}
+          onPageSizeChange={setAgendaPageSize}
+          itemLabel="agenda"
+        />
       </div>
 
       {/* Expedisi Tables Section */}
@@ -710,7 +858,10 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
               type="text"
               placeholder="Cari nama / jabatan..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={e => {
+                setSearchTerm(e.target.value);
+                setExpedisiPage(1);
+              }}
               className="w-full pl-9 pr-4 py-1.5 text-xs bg-emerald-800/80 border border-emerald-700 rounded-xl text-white placeholder-emerald-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
             />
           </div>
@@ -727,7 +878,10 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
           ].map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => {
+                setActiveTab(tab.id as any);
+                setExpedisiPage(1);
+              }}
               className={`px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
                 activeTab === tab.id
                   ? 'bg-emerald-900 text-amber-200 shadow-sm'
@@ -762,42 +916,55 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
                   </td>
                 </tr>
               ) : (
-                filteredExpedisi.map((item, index) => (
-                  <tr key={item.id} className="hover:bg-emerald-50/50 transition">
-                    <td className="p-3 text-center font-bold text-emerald-700">{index + 1}</td>
-                    <td className="p-3 font-semibold text-emerald-950">{item.nama}</td>
-                    <td className="p-3 text-emerald-800">{item.instansiJabatan}</td>
-                    <td className="p-3 text-emerald-700">{item.alamat}</td>
-                    <td className="p-3 font-mono text-emerald-800">{item.noHandphone}</td>
-                    <td className="p-3 text-emerald-700">{item.keterangan}</td>
-                    <td className="p-3 text-center">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-medium">
-                        <Upload className="w-3 h-3 text-emerald-600" />
-                        <span>{item.berkasUrl || 'Upload'}</span>
-                      </span>
-                    </td>
-                    <td className="p-3 text-center space-x-1 whitespace-nowrap">
-                      <button
-                        onClick={() => handleOpenEditModal(item)}
-                        className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg transition inline-block"
-                        title="Edit Data Expedisi"
-                      >
-                        <Edit3 className="w-4 h-4 text-emerald-800" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteExpedisi(item.id)}
-                        className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition inline-block"
-                        title="Hapus Data"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                paginatedExpedisi.map((item, index) => {
+                  const globalExpIdx = (expedisiPage - 1) * expedisiPageSize + index + 1;
+                  return (
+                    <tr key={item.id} className="hover:bg-emerald-50/50 transition">
+                      <td className="p-3 text-center font-bold text-emerald-700">{globalExpIdx}</td>
+                      <td className="p-3 font-semibold text-emerald-950">{item.nama}</td>
+                      <td className="p-3 text-emerald-800">{item.instansiJabatan}</td>
+                      <td className="p-3 text-emerald-700">{item.alamat}</td>
+                      <td className="p-3 font-mono text-emerald-800">{item.noHandphone}</td>
+                      <td className="p-3 text-emerald-700">{item.keterangan}</td>
+                      <td className="p-3 text-center">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-medium">
+                          <Upload className="w-3 h-3 text-emerald-600" />
+                          <span>{item.berkasUrl || 'Upload'}</span>
+                        </span>
+                      </td>
+                      <td className="p-3 text-center space-x-1 whitespace-nowrap">
+                        <button
+                          onClick={() => handleOpenEditModal(item)}
+                          className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg transition inline-block"
+                          title="Edit Data Expedisi"
+                        >
+                          <Edit3 className="w-4 h-4 text-emerald-800" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExpedisi(item.id)}
+                          className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition inline-block"
+                          title="Hapus Data"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Expedisi Pagination */}
+        <Pagination
+          currentPage={expedisiPage}
+          totalItems={filteredExpedisi.length}
+          pageSize={expedisiPageSize}
+          onPageChange={setExpedisiPage}
+          onPageSizeChange={setExpedisiPageSize}
+          itemLabel="expedisi"
+        />
       </div>
 
       {/* Add / Edit Agenda Rencana Modal */}
@@ -833,16 +1000,68 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-emerald-900 mb-1">Tanggal Pelaksanaan / Hijriah</label>
-                <input
-                  type="text"
-                  required
-                  value={agendaTanggal}
-                  onChange={e => setAgendaTanggal(e.target.value)}
-                  className="w-full p-2.5 text-xs bg-emerald-50/40 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-                  placeholder="Contoh: 15 Ramadhan 1447 H"
-                />
+              <div className="space-y-2.5 bg-emerald-50/30 p-3 rounded-2xl border border-emerald-100/70">
+                <div>
+                  <label className="block text-xs font-bold text-emerald-900 mb-1">Pilih Tanggal Masehi</label>
+                  <input
+                    type="date"
+                    value={selDate}
+                    onChange={e => handleDateChange(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-600 focus:outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-emerald-900 mb-1">Hari</label>
+                    <select
+                      value={selDay}
+                      onChange={e => handleDayChange(e.target.value)}
+                      className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-600 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">-- Pilih Hari --</option>
+                      <option value="Senin">Senin</option>
+                      <option value="Selasa">Selasa</option>
+                      <option value="Rabu">Rabu</option>
+                      <option value="Kamis">Kamis</option>
+                      <option value="Jumat">Jumat</option>
+                      <option value="Sabtu">Sabtu</option>
+                      <option value="Minggu">Minggu</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-emerald-900 mb-1">Periode Tahun</label>
+                    <select
+                      value={formTahun}
+                      onChange={e => setFormTahun(e.target.value)}
+                      className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-600 focus:outline-none cursor-pointer font-semibold text-emerald-950"
+                    >
+                      <option value="2026">2026 / 1448 H</option>
+                      <option value="2025">2025 / 1447 H</option>
+                      <option value="2024">2024 / 1446 H</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-emerald-900 mb-1">Tambahan Keterangan Hijriah (Opsional)</label>
+                  <input
+                    type="text"
+                    value={selHijri}
+                    onChange={e => handleHijriChange(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-600 focus:outline-none"
+                    placeholder="Contoh: 10 Syawal 1448 H"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-emerald-950 mb-1">Hasil Gabungan Hari / Tanggal (Otomatis)</label>
+                  <input
+                    type="text"
+                    required
+                    value={agendaTanggal}
+                    onChange={e => setAgendaTanggal(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-emerald-100/50 border border-emerald-200 rounded-xl font-bold text-emerald-950 focus:ring-1 focus:ring-emerald-600 focus:outline-none"
+                    placeholder="Contoh: Sabtu, 10 Syawal 1448 H"
+                  />
+                </div>
               </div>
 
               <div>
@@ -853,7 +1072,7 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
                   value={agendaPj}
                   onChange={e => setAgendaPj(e.target.value)}
                   className="w-full p-2.5 text-xs bg-emerald-50/40 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-                  placeholder="Contoh: Ust. Zainal Abidin / Fathurrahman"
+                  placeholder="Contoh: Maz Syaiful"
                 />
               </div>
 
@@ -950,7 +1169,7 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
                   value={newHp}
                   onChange={e => setNewHp(e.target.value)}
                   className="w-full p-2.5 text-xs bg-emerald-50/40 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-                  placeholder="Contoh: 081234567890"
+                  placeholder="Contoh: 081231376394"
                 />
               </div>
               <div>
@@ -1005,11 +1224,30 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
 
       {/* Print 40 Agenda Modal */}
       {showAgendaPrint && (
-        <PrintModal title="Cetak Rekapitulasi 40 Agenda Rencana Kegiatan & Rapat" onClose={() => setShowAgendaPrint(false)}>
+        <PrintModal 
+          title="Rekapitulasi 40 Agenda Rencana Kegiatan & Rapat" 
+          onClose={() => setShowAgendaPrint(false)}
+          orgProfile={orgProfile}
+          logoUrl={logoUrl}
+        >
           <div className="space-y-4 font-sans text-xs">
+            <div className="flex items-center gap-4 pb-4 border-b-2 border-emerald-900">
+              <div className="w-14 h-14 bg-white rounded-full border border-amber-400 overflow-hidden shrink-0 shadow-xs p-0.5">
+                <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Logo" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
+              </div>
+              <div className="flex-1 text-center pr-6">
+                <h2 className="text-sm sm:text-base font-serif font-bold text-emerald-950 uppercase tracking-wide">
+                  {orgProfile?.namaOrganisasi || 'FORUM KOMUNIKASI SANTRI PULAU SAPUDI'}
+                </h2>
+                <p className="text-[10px] text-emerald-800 mt-0.5 font-sans">
+                  {orgProfile?.alamatSekretariat || 'Jl. Sawah Seribu No. 01 Rt.01/Rw.01 Ds. Tarebung, Kec. Gayam Kab. Sumenep, Jawa Timur'} | Telp/WA: {orgProfile?.noTelepon || '+62 856-0674-7982'}
+                </p>
+              </div>
+            </div>
+
             <div className="text-center border-b border-emerald-200 pb-3">
-              <h2 className="text-base font-serif font-bold text-emerald-950 uppercase">
-                REKAPITULASI RENCANA KEGIATAN & RAPAT PENGURUS FOKUS
+              <h2 className="text-base font-serif font-bold text-emerald-950 uppercase tracking-wider">
+                REKAPITULASI RENCANA KEGIATAN & RAPAT PENGURUS
               </h2>
               <p className="text-xs text-emerald-700 mt-1">Total: {totalAgendaCount} Agenda | Terlaksana: {totalTerlaksanaCount} | Belum Terlaksana: {totalBelumTerlaksanaCount}</p>
             </div>
@@ -1050,11 +1288,32 @@ export const FokusView: React.FC<FokusViewProps> = ({ onNotify }) => {
 
       {/* Print Expedisi PDF Modal */}
       {showPrint && (
-        <PrintModal title={`Lembar Expedisi - ${activeTab.toUpperCase()}`} onClose={() => setShowPrint(false)}>
-          <div className="text-center space-y-4 font-sans text-xs">
-            <h2 className="text-base font-serif font-bold text-emerald-950 uppercase">
-              REKAPITULASI EXPEDISI {activeTab.replace(/_/g, ' ').toUpperCase()}
-            </h2>
+        <PrintModal 
+          title={`Lembar Expedisi - ${activeTab.toUpperCase()}`} 
+          onClose={() => setShowPrint(false)}
+          orgProfile={orgProfile}
+          logoUrl={logoUrl}
+        >
+          <div className="space-y-4 font-sans text-xs">
+            <div className="flex items-center gap-4 pb-4 border-b-2 border-emerald-900">
+              <div className="w-14 h-14 bg-white rounded-full border border-amber-400 overflow-hidden shrink-0 shadow-xs p-0.5">
+                <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Logo" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
+              </div>
+              <div className="flex-1 text-center pr-6">
+                <h2 className="text-sm sm:text-base font-serif font-bold text-emerald-950 uppercase tracking-wide">
+                  {orgProfile?.namaOrganisasi || 'FORUM KOMUNIKASI SANTRI PULAU SAPUDI'}
+                </h2>
+                <p className="text-[10px] text-emerald-800 mt-0.5 font-sans">
+                  {orgProfile?.alamatSekretariat || 'Jl. Sawah Seribu No. 01 Rt.01/Rw.01 Ds. Tarebung, Kec. Gayam Kab. Sumenep, Jawa Timur'} | Telp/WA: {orgProfile?.noTelepon || '+62 856-0674-7982'}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <h2 className="text-base font-serif font-bold text-emerald-950 uppercase">
+                REKAPITULASI EXPEDISI {activeTab.replace(/_/g, ' ').toUpperCase()}
+              </h2>
+            </div>
             <div className="border-t border-b border-emerald-200 py-3 text-left">
               <table className="w-full text-xs">
                 <thead>

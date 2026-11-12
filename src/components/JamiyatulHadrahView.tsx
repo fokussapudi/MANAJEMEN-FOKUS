@@ -1,18 +1,35 @@
 import React, { useState, useRef } from 'react';
-import { HadrahJadwalRow } from '../types';
+import { HadrahJadwalRow, OrganizationProfile } from '../types';
 import { initialHadrahJadwal } from '../data/initialData';
 import {
-  Music, Printer, Plus, Trash2, Download, Upload, FileSpreadsheet, FileText, Edit3, X, Mail
+  Music, Printer, Plus, Trash2, Download, Upload, FileSpreadsheet, FileText, Edit3, X, Mail, Search
 } from 'lucide-react';
 import { PrintModal } from './PrintModal';
+import { Pagination } from './Pagination';
 import { exportToExcel, downloadCsvTemplate, parseExcelFile } from '../utils/excelUtils';
 
+import { matchesYear, formatGregorianIndo } from '../utils/filterUtils';
+
 interface JamiyatulHadrahViewProps {
+  jadwal?: HadrahJadwalRow[];
+  setJadwal?: React.Dispatch<React.SetStateAction<HadrahJadwalRow[]>>;
   onNotify: (title: string, message: string) => void;
+  selectedYear?: string;
+  orgProfile?: OrganizationProfile;
+  logoUrl?: string;
 }
 
-export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNotify }) => {
-  const [jadwal, setJadwal] = useState<HadrahJadwalRow[]>(initialHadrahJadwal);
+export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ 
+  jadwal: propJadwal, 
+  setJadwal: propSetJadwal, 
+  onNotify,
+  selectedYear = 'Semua',
+  orgProfile,
+  logoUrl
+}) => {
+  const [localJadwal, setLocalJadwal] = useState<HadrahJadwalRow[]>(initialHadrahJadwal);
+  const jadwal = propJadwal || localJadwal;
+  const setJadwal = propSetJadwal || setLocalJadwal;
   const [showPrintAll, setShowPrintAll] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [editingItem, setEditingItem] = useState<HadrahJadwalRow | null>(null);
@@ -20,10 +37,89 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
 
   // Custom Signature State
   const [showSignatureModal, setShowSignatureModal] = useState(false);
-  const [sign1Title, setSign1Title] = useState("Pimpinan Jam'iyatul Hadrah");
-  const [sign1Name, setSign1Name] = useState('BADRUTTAMAM');
-  const [sign2Title, setSign2Title] = useState('Ketua FOKUS Sapudi');
-  const [sign2Name, setSign2Name] = useState('UST. ZAINAL ABIDIN');
+  const [sign1Title, setSign1Title] = useState("Koord. Jam'iyatul Hadrah");
+  const [sign1Name, setSign1Name] = useState('Ust. Abd. Muhyi, S.Ag');
+  const [sign2Title, setSign2Title] = useState('Ketua FOKUS Pulau Sapudi');
+  const [sign2Name, setSign2Name] = useState('Ust. Subairi, S.Ag');
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const [formTahun, setFormTahun] = useState('2026');
+  const [selDay, setSelDay] = useState('');
+  const [selDate, setSelDate] = useState('');
+  const [selHijri, setSelHijri] = useState('');
+
+  const parseHariTanggal = (str: string) => {
+    let parsedDay = '';
+    let parsedHijri = '';
+    
+    const parts = str.split(',');
+    if (parts.length > 0) {
+      const possibleDay = parts[0].trim();
+      const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+      if (days.includes(possibleDay)) {
+        parsedDay = possibleDay;
+      }
+      
+      if (parts.length > 1) {
+        const dateAndHijri = parts[1].split('/');
+        if (dateAndHijri.length > 1) {
+          parsedHijri = dateAndHijri[1].trim();
+        } else {
+          const text = parts[1].trim();
+          if (text.endsWith('H') || text.includes('H')) {
+            parsedHijri = text;
+          }
+        }
+      }
+    }
+    return { parsedDay, parsedHijri };
+  };
+
+  const handleDateChange = (dateVal: string) => {
+    setSelDate(dateVal);
+    const { dayName, dateFormatted } = formatGregorianIndo(dateVal);
+    let dayToUse = dayName || selDay;
+    if (dayName) setSelDay(dayName);
+    
+    const combined = `${dayToUse ? `${dayToUse}, ` : ''}${dateFormatted}${selHijri ? ` / ${selHijri}` : ''}`;
+    setHari(combined);
+  };
+
+  const handleDayChange = (dayVal: string) => {
+    setSelDay(dayVal);
+    let datePart = '';
+    if (selDate) {
+      const { dateFormatted } = formatGregorianIndo(selDate);
+      datePart = dateFormatted;
+    }
+    const combined = `${dayVal ? `${dayVal}, ` : ''}${datePart}${selHijri ? ` / ${selHijri}` : ''}`;
+    setHari(combined);
+  };
+
+  const handleHijriChange = (hijriVal: string) => {
+    setSelHijri(hijriVal);
+    let datePart = '';
+    if (selDate) {
+      const { dateFormatted } = formatGregorianIndo(selDate);
+      datePart = dateFormatted;
+    }
+    const combined = `${selDay ? `${selDay}, ` : ''}${datePart}${hijriVal ? ` / ${hijriVal}` : ''}`;
+    setHari(combined);
+  };
+
+  const filteredJadwal = jadwal.filter(item =>
+    matchesYear(item, selectedYear) &&
+    (item.hariTanggal.toLowerCase().includes(searchQuery.toLowerCase()) ||
+     item.pengundang.toLowerCase().includes(searchQuery.toLowerCase()) ||
+     item.tuanRumah.toLowerCase().includes(searchQuery.toLowerCase()) ||
+     item.alamat.toLowerCase().includes(searchQuery.toLowerCase()) ||
+     item.noHandphone.includes(searchQuery))
+  );
+
+  const paginatedJadwal = filteredJadwal.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,6 +138,10 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
     setAlamat('');
     setHp('');
     setInfaq('500000');
+    setFormTahun(selectedYear !== 'Semua' ? selectedYear : '2026');
+    setSelDay('');
+    setSelDate('');
+    setSelHijri('');
     setShowAdd(true);
   };
 
@@ -53,6 +153,12 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
     setAlamat(item.alamat);
     setHp(item.noHandphone);
     setInfaq(String(item.infaq));
+    setFormTahun(item.tahun || '2026');
+    
+    const parsed = parseHariTanggal(item.hariTanggal);
+    setSelDay(parsed.parsedDay);
+    setSelHijri(parsed.parsedHijri);
+    setSelDate('');
     setShowAdd(true);
   };
 
@@ -66,7 +172,8 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
         tuanRumah,
         alamat,
         noHandphone: hp,
-        infaq: Number(infaq) || 0
+        infaq: Number(infaq) || 0,
+        tahun: formTahun
       } : item));
       setShowAdd(false);
       onNotify('Data Diperbarui', 'Data jadwal undangan hadrah berhasil diperbarui.');
@@ -79,7 +186,8 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
         tuanRumah,
         alamat,
         noHandphone: hp,
-        infaq: Number(infaq) || 0
+        infaq: Number(infaq) || 0,
+        tahun: formTahun
       };
       setJadwal([newItem, ...jadwal]);
       setShowAdd(false);
@@ -102,13 +210,12 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
   // Excel Handlers
   const handleDownloadTemplate = () => {
     const headers = ['NO', 'HARI / TANGGAL', 'PENGUNDANG', 'TUAN RUMAH', 'ALAMAT', 'NO HANDPHONE', 'INFAQ (RP)'];
-    const sample = [1, 'Sabtu, 15 Syawal 1447 H', 'Takmir Masjid Al-Hikmah', 'H. Abdurrahman', 'Gayam Sapudi', '081234567890', 500000];
     downloadCsvTemplate('Jamiyatul_Hadrah_Jadwal', headers, sample);
     onNotify('Template Didownload', 'Template Excel jadwal hadrah berhasil diunduh.');
   };
 
   const handleExportExcel = () => {
-    const headers = ['NO', 'HARI / TANGGAL', 'PENGUNDANG', 'TUAN RUMAH', 'ALAMAT', 'NO HANDPHONE', 'INFAQ (RP)'];
+    const headers = ['NO', 'HARI / TANGGAL', 'PENGUNDANG / ACARA', 'TUAN RUMAH', 'ALAMAT LENGKAP', 'NO HANDPHONE / WA', 'INFAQ (RP)'];
     const rows = jadwal.map((item, idx) => [
       idx + 1,
       item.hariTanggal,
@@ -118,8 +225,17 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
       item.noHandphone,
       item.infaq
     ]);
-    exportToExcel('Jadwal_Jamiyatul_Hadrah', headers, rows);
-    onNotify('Export Excel Berhasil', 'Data jadwal hadrah berhasil diexport ke Excel.');
+    exportToExcel(
+      'Jadwal_Jamiyatul_Hadrah',
+      headers,
+      rows,
+      {
+        title: 'ORGANISASI FOKUS SAPUDI - JADWAL JAMI\'YATUL HADRAH & ISHARI',
+        subtitle: 'Daftar Rotasi Undangan Acara Hadrah, Shohibul Bait & Infaq',
+        sheetName: 'Jadwal Hadrah'
+      }
+    );
+    onNotify('Export Excel Berhasil', 'Data jadwal hadrah berhasil diexport ke Excel (.xlsx).');
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,7 +253,7 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
             newItems.push({
               id: 'imp-h-' + Date.now() + '-' + idx,
               no: jadwal.length + idx + 1,
-              hariTanggal: cols[offset] || 'Syawal 1447 H',
+              hariTanggal: cols[offset] || 'Syawal 1448 H',
               pengundang: cols[offset + 1] || 'Pengundang',
               tuanRumah: cols[offset + 2] || 'Tuan Rumah',
               alamat: cols[offset + 3] || 'Sapudi',
@@ -236,10 +352,24 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
 
       {/* Table Section */}
       <div className="bg-white rounded-3xl shadow-sm border border-emerald-100 overflow-hidden">
-        <div className="p-4 sm:p-6 border-b border-emerald-100 bg-teal-900 text-white flex justify-between items-center">
+        <div className="p-4 sm:p-6 border-b border-emerald-100 bg-teal-900 text-white flex flex-col md:flex-row justify-between md:items-center gap-3">
           <div>
-            <h3 className="font-serif font-bold text-amber-200 text-base">JADWAL UNDANGAN JAM'IYATUL HADRAH FOKUS</h3>
+            <h3 className="font-serif font-bold text-amber-200 text-base">JADWAL UNDANGAN JAM'IYATUL HADRAH FOKUS PULAU SAPUDI</h3>
             <p className="text-xs text-teal-200">Daftar pengundang, tuan rumah, lokasi, nomor HP, infaq & cetak lembar acara satuan</p>
+          </div>
+
+          <div className="relative w-full md:w-56">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-teal-300" />
+            <input
+              type="text"
+              placeholder="Cari jadwal hadrah..."
+              value={searchQuery}
+              onChange={e => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-8 pr-3 py-1.5 bg-teal-800/80 border border-teal-700/80 rounded-xl text-xs text-white placeholder-teal-300 focus:outline-none focus:ring-1 focus:ring-amber-300"
+            />
           </div>
         </div>
 
@@ -249,6 +379,7 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
               <tr className="bg-emerald-100/60 text-emerald-950 font-bold border-b border-emerald-200">
                 <th className="p-3 text-center w-12">NO</th>
                 <th className="p-3">HARI / TANGGAL</th>
+                <th className="p-3 text-center">PERIODE</th>
                 <th className="p-3">PENGUNDANG</th>
                 <th className="p-3">TUAN RUMAH</th>
                 <th className="p-3">ALAMAT</th>
@@ -258,17 +389,22 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-50 text-emerald-900">
-              {jadwal.length === 0 ? (
+              {filteredJadwal.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-emerald-600">
-                    Belum ada data jadwal undangan jam'iyatul hadrah.
+                  <td colSpan={9} className="p-8 text-center text-emerald-600">
+                    Belum ada data jadwal undangan jam'iyatul hadrah yang cocok.
                   </td>
                 </tr>
               ) : (
-                jadwal.map((item, index) => (
+                paginatedJadwal.map((item, index) => (
                   <tr key={item.id} className="hover:bg-emerald-50/50 transition">
-                    <td className="p-3 text-center font-bold text-teal-700">{index + 1}</td>
+                    <td className="p-3 text-center font-bold text-teal-700">{(currentPage - 1) * pageSize + index + 1}</td>
                     <td className="p-3 font-semibold text-emerald-950">{item.hariTanggal}</td>
+                    <td className="p-3 text-center">
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        {item.tahun || '2026'}
+                      </span>
+                    </td>
                     <td className="p-3 text-emerald-900 font-bold">{item.pengundang}</td>
                     <td className="p-3 text-emerald-800">{item.tuanRumah}</td>
                     <td className="p-3 text-emerald-700">{item.alamat}</td>
@@ -307,6 +443,16 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredJadwal.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          itemLabel="jadwal"
+        />
       </div>
 
       {/* Modal Add / Edit Jadwal */}
@@ -317,16 +463,68 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
               {editingItem ? "Edit Data Jadwal Undangan Hadrah" : "Tambah Jadwal Undangan Hadrah"}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-emerald-900 mb-1">Hari / Tanggal</label>
-                <input
-                  type="text"
-                  required
-                  value={hari}
-                  onChange={e => setHari(e.target.value)}
-                  className="w-full p-2.5 text-xs bg-emerald-50/40 border border-emerald-200 rounded-xl"
-                  placeholder="Contoh: Sabtu, 10 Syawal 1447 H"
-                />
+              <div className="space-y-2.5 bg-emerald-50/30 p-3 rounded-2xl border border-emerald-100/70">
+                <div>
+                  <label className="block text-xs font-bold text-emerald-900 mb-1">Pilih Tanggal Masehi</label>
+                  <input
+                    type="date"
+                    value={selDate}
+                    onChange={e => handleDateChange(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-600 focus:outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-emerald-900 mb-1">Hari</label>
+                    <select
+                      value={selDay}
+                      onChange={e => handleDayChange(e.target.value)}
+                      className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-600 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">-- Pilih Hari --</option>
+                      <option value="Senin">Senin</option>
+                      <option value="Selasa">Selasa</option>
+                      <option value="Rabu">Rabu</option>
+                      <option value="Kamis">Kamis</option>
+                      <option value="Jumat">Jumat</option>
+                      <option value="Sabtu">Sabtu</option>
+                      <option value="Minggu">Minggu</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-emerald-900 mb-1">Periode Tahun</label>
+                    <select
+                      value={formTahun}
+                      onChange={e => setFormTahun(e.target.value)}
+                      className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-600 focus:outline-none cursor-pointer font-semibold text-emerald-950"
+                    >
+                      <option value="2026">2026 / 1448 H</option>
+                      <option value="2025">2025 / 1447 H</option>
+                      <option value="2024">2024 / 1446 H</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-emerald-900 mb-1">Tambahan Keterangan Hijriah (Opsional)</label>
+                  <input
+                    type="text"
+                    value={selHijri}
+                    onChange={e => handleHijriChange(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-white border border-emerald-200 rounded-xl focus:ring-1 focus:ring-emerald-600 focus:outline-none"
+                    placeholder="Contoh: 15 Syawal 1448 H"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-emerald-950 mb-1">Hasil Gabungan Hari / Tanggal (Otomatis)</label>
+                  <input
+                    type="text"
+                    required
+                    value={hari}
+                    onChange={e => setHari(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-emerald-100/50 border border-emerald-200 rounded-xl font-bold text-emerald-950 focus:ring-1 focus:ring-emerald-600 focus:outline-none"
+                    placeholder="Contoh: Sabtu, 10 Syawal 1447 H"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-emerald-900 mb-1">Pengundang / Organisasi</label>
@@ -502,22 +700,24 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
         <PrintModal
           title={`Lembar Jadwal Acara Hadrah - ${selectedSatuan.pengundang}`}
           onClose={() => setSelectedSatuan(null)}
+          orgProfile={orgProfile}
+          logoUrl={logoUrl}
         >
           <div className="p-6 bg-white text-emerald-950 font-serif border border-emerald-200 rounded-2xl shadow-sm space-y-5 text-xs max-w-2xl mx-auto">
             {/* Kop Surat Header */}
             <div className="flex items-center gap-4 pb-4 border-b-2 border-emerald-900">
               <div className="w-16 h-16 bg-white rounded-full border-2 border-amber-400 overflow-hidden shrink-0 shadow-xs">
-                <img src="/logo.jpg" alt="Logo Fokus" className="w-full h-full object-cover" />
+                <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Logo" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
               </div>
               <div className="flex-1 text-center pr-10">
                 <h2 className="text-base font-bold text-emerald-950 uppercase tracking-wide">
-                  FORUM KOMUNIKASI SANTRI (FOKUS)
+                  {orgProfile?.namaOrganisasi || 'FORUM KOMUNIKASI SANTRI (FOKUS)'}
                 </h2>
                 <h3 className="text-xs font-bold text-amber-700 uppercase tracking-widest mt-0.5">
-                  JAM'IYATUL HADRAH FOKUS SAPUDI
+                  JAM'IYATUL HADRAH FOKUS PULAU SAPUDI SAPUDI
                 </h3>
                 <p className="text-[10px] font-sans text-emerald-800 mt-1">
-                  Sekretariat Utama: Pulau Sapudi, Kab. Sumenep, Jawa Timur | Telp/WA: {selectedSatuan.noHandphone !== '-' ? selectedSatuan.noHandphone : '0812-3456-7890'}
+                  Sekretariat: {orgProfile?.alamatSekretariat || 'Jl. Sawah Seribu No. 01 Ds. Tarebung, Kec. Gayam, Kab. Sumenep, Jawa Timur'} | Telp/WA: {selectedSatuan.noHandphone !== '-' ? selectedSatuan.noHandphone : (orgProfile?.noTelepon || '0856-0674-7982')}
                 </p>
               </div>
             </div>
@@ -570,7 +770,7 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
 
             {/* Ketentuan Penampilan Hadrah */}
             <div className="space-y-2 leading-relaxed font-sans text-xs bg-emerald-50/40 p-3 rounded-xl border border-emerald-100">
-              <p className="font-bold text-emerald-950 text-[11px]">KETENTUAN PELAKSANAAN PENAMPILAN HADRAH:</p>
+              <p className="font-bold text-emerald-950 text-[11px]">KETENTUAN PELAKSANAAN HADRAH:</p>
               <ul className="list-disc list-inside space-y-1 text-emerald-900 text-[11px]">
                 <li>Tim Hadrah siap di lokasi 30 menit sebelum pembacaan sholawat dimulai.</li>
                 <li>Shohibul Bait / Pengundang memfasilitasi area khusus tim hadrah beserta perlengkapan sound system.</li>
@@ -586,8 +786,8 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
               </div>
 
               <div className="text-center">
-                <div className="w-12 h-12 rounded-full border-2 border-amber-500 overflow-hidden shadow-xs mx-auto mb-1">
-                  <img src="/logo.jpg" alt="Stempel Fokus" className="w-full h-full object-cover" />
+                <div className="w-12 h-12 rounded-full border-2 border-amber-500 overflow-hidden shadow-xs mx-auto mb-1 bg-white">
+                  <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Stempel Fokus" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
                 </div>
                 <p className="text-[10px] text-emerald-800 font-bold uppercase tracking-widest">STEMPEL RESMI</p>
               </div>
@@ -603,9 +803,17 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
 
       {/* Print All Jadwal Modal */}
       {showPrintAll && (
-        <PrintModal title="Jadwal Resmi Jam'iyatul Hadrah" onClose={() => setShowPrintAll(false)}>
+        <PrintModal 
+          title="Jadwal Resmi Jam'iyatul Hadrah" 
+          onClose={() => setShowPrintAll(false)}
+          orgProfile={orgProfile}
+          logoUrl={logoUrl}
+        >
           <div className="text-center space-y-4">
-            <h2 className="text-xl font-serif font-bold text-emerald-950">JADWAL UNDANGAN JAM'IYATUL HADRAH FOKUS</h2>
+            <h2 className="text-xl font-serif font-bold text-emerald-950 uppercase">
+              JADWAL UNDANGAN JAM'IYATUL HADRAH
+            </h2>
+            <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">{orgProfile?.namaOrganisasi || 'FORUM KOMUNIKASI SANTRI PULAU SAPUDI'}</p>
             <div className="border-t border-b border-emerald-200 py-4 my-4 text-left">
               <table className="w-full text-xs">
                 <thead>
@@ -639,8 +847,8 @@ export const JamiyatulHadrahView: React.FC<JamiyatulHadrahViewProps> = ({ onNoti
               </div>
 
               <div className="text-center">
-                <div className="w-12 h-12 rounded-full border border-amber-500 overflow-hidden shadow-xs mx-auto mb-0.5">
-                  <img src="/logo.jpg" alt="Stempel Fokus" className="w-full h-full object-cover" />
+                <div className="w-12 h-12 rounded-full border border-amber-500 overflow-hidden shadow-xs mx-auto mb-0.5 bg-white">
+                  <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Stempel Fokus" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
                 </div>
                 <p className="text-[9px] text-emerald-800 font-bold uppercase tracking-widest">STEMPEL RESMI</p>
               </div>

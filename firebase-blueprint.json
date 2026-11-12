@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "sahmasy": {
+      "title": "Sahmasy",
+      "description": "Sensus database anggota, santri, dan aktivis FOKUS Sapudi"
+    },
+    "expedisi": {
+      "title": "Expedisi Surat",
+      "description": "Buku agenda ekspedisi surat masuk dan keluar FOKUS"
+    },
+    "agendaList": {
+      "title": "Agenda Pengajian & Rapat",
+      "description": "Jadwal dan dokumentasi kegiatan pengajian serta rapat rutin"
+    },
+    "lombaList": {
+      "title": "Perlombaan",
+      "description": "Daftar cabang lomba, kriteria, penilaian, dan data juara"
+    },
+    "khotmilJadwal": {
+      "title": "Khotmil Quran Jadwal",
+      "description": "Jadwal putaran Khotmil Quran bulanan dan kelompok pembaca"
+    },
+    "khotmilAbsen": {
+      "title": "Khotmil Quran Absensi",
+      "description": "Log absensi dan kehadiran pembaca Khotmil Quran"
+    },
+    "hadrahJadwal": {
+      "title": "Jam'iyatul Hadrah",
+      "description": "Jadwal penampilan, latihan, dan kas Jam'iyatul Hadrah"
+    },
+    "iuranList": {
+      "title": "Iuran Anggota",
+      "description": "Catatan iuran bulanan aktivis, asrama, dan rayon"
+    },
+    "tanggunganList": {
+      "title": "Tanggungan Iuran",
+      "description": "Rekapitulasi tanggungan dan tagihan iuran pengurus"
+    },
+    "donaturList": {
+      "title": "Donatur & Infaq",
+      "description": "Catatan donatur, infaq, dan sponsorship organisasi"
+    },
+    "users": {
+      "title": "Users",
+      "description": "Akun pengurus dan pengguna sistem FOKUS"
+    },
+    "rolePermissions": {
+      "title": "Role Permissions",
+      "description": "Hak akses dan perizinan menu per role akun"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Notifikasi dan log aktivitas sistem FOKUS"
+    }
+  }
+}

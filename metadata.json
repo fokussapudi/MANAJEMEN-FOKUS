@@ -1,6 +1,6 @@
 {
   "name": "MANAJEMENT FOKUS SAPUDI",
-  "description": "Sistem pencatatan dan manajemen organisasi kompleks terintegrasi, dengan otorisasi bertingkat, Google Drive/Sheets sync, dan nuansa Islami hijau elegan emerald.",
+  "description": "Sistem manajemen organisasi FOKUS Sapudi terintegrasi dengan kustomisasi logo & profil dinamis, otorisasi role terdaftar, cetak KTA digital, dan database server terpusat.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

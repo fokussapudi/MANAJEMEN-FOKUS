@@ -7,13 +7,14 @@ export type TabType =
   | 'hadrah'
   | 'bendahara'
   | 'sensus'
-  | 'google_sync'
   | 'kta'
+  | 'profil_organisasi'
   | 'role_management';
 
 export type UserRole = 'admin' | 'sekretaris' | 'bendahara' | 'lomba' | 'quran' | 'hadrah' | 'sensus' | 'pengurus' | string;
 
 export interface RolePermission {
+  id: string;
   roleId: string;
   roleName: string;
   description: string;
@@ -31,6 +32,8 @@ export interface UserAccount {
   fotoUrl?: string;
   isActive?: boolean;
   customAllowedTabs?: TabType[];
+  updatedAt?: string;
+  createdAt?: string;
 }
 
 export interface NotificationItem {
@@ -52,6 +55,7 @@ export interface ExpedisiRow {
   noHandphone: string;
   keterangan: string;
   berkasUrl?: string;
+  tahun?: string;
 }
 
 export interface AgendaItem {
@@ -63,6 +67,7 @@ export interface AgendaItem {
   penanggungJawab: string;
   terlaksana: boolean;
   keterangan: string;
+  tahun?: string;
 }
 
 export interface LombaRow {
@@ -81,6 +86,7 @@ export interface LombaRow {
   col3: string; // e.g. Irama / Thumakninah / Ekspresi / Adab
   juara: string;
   berkasUrl?: string;
+  tahun?: string;
 }
 
 export interface KhotmilJadwalRow {
@@ -91,6 +97,7 @@ export interface KhotmilJadwalRow {
   alamat: string;
   noHandphone: string;
   infaq: number;
+  tahun?: string;
 }
 
 export interface KhotmilAbsenRow {
@@ -112,6 +119,7 @@ export interface HadrahJadwalRow {
   alamat: string;
   noHandphone: string;
   infaq: number;
+  tahun?: string;
 }
 
 export interface TransactionRecord {
@@ -128,6 +136,7 @@ export interface TransactionRecord {
   penerima?: string;
   jenisIuran?: string;
   keterangan?: string;
+  tahun?: string;
 }
 
 export interface IuranRow {
@@ -152,6 +161,7 @@ export interface IuranRow {
   keterangan: string;
   tanggalBayar?: string;
   penerima?: string;
+  tahun?: string;
 }
 
 export interface TanggunganRow {
@@ -161,6 +171,7 @@ export interface TanggunganRow {
   nominal: number;
   tindakLanjut: string;
   keterangan: string;
+  tahun?: string;
 }
 
 export interface DonaturRow {
@@ -172,6 +183,18 @@ export interface DonaturRow {
   nominal: number;
   penerima: string;
   keterangan: string;
+  tahun?: string;
+  noHandphone?: string;
+}
+
+export interface BerkasItem {
+  id: string;
+  type: 'kk' | 'akta' | 'ktp' | 'santri' | 'ijazah' | 'dokumen_lain' | string;
+  name: string;
+  url: string;
+  size?: number;
+  uploadedAt?: string;
+  description?: string;
 }
 
 export interface SahmasyRow {
@@ -189,6 +212,56 @@ export interface SahmasyRow {
   rtRw: string;
   desa: string;
   kecamatan: string;
+  jabatan?: string;
   fotoUrl?: string;
   berkasUrl?: string;
+  berkasName?: string;
+  berkasType?: 'kk' | 'akta' | 'ktp' | 'ijazah' | 'santri' | 'dokumen_lain' | string;
+  berkasList?: BerkasItem[];
+  kkUrl?: string;
+  kkName?: string;
+  aktaUrl?: string;
+  aktaName?: string;
+  ktpUrl?: string;
+  ktpName?: string;
+  santriUrl?: string;
+  santriName?: string;
+  ijazahUrl?: string;
+  ijazahName?: string;
+  tahunMasuk?: string;
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+export interface OrganizationProfile {
+  id: string;
+  namaOrganisasi: string;
+  singkatan: string;
+  semboyan: string;
+  logoUrl: string;
+  stempelUrl?: string;
+  tandaTanganKetuaUrl?: string;
+  tandaTanganSekretarisUrl?: string;
+  namaKetua: string;
+  namaSekretaris: string;
+  namaBendahara: string;
+  alamatSekretariat: string;
+  desa: string;
+  kecamatan: string;
+  kabupaten: string;
+  provinsi: string;
+  kodePos: string;
+  noTelepon: string;
+  email: string;
+  website: string;
+  facebook?: string;
+  instagram?: string;
+  youtube?: string;
+  tiktok?: string;
+  visi: string;
+  misi: string[];
+  sejarahSingkat: string;
+  tahunBerdiri: string;
+  updatedAt?: string;
+  updatedBy?: string;
 }

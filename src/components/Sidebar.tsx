@@ -1,5 +1,6 @@
 import React from 'react';
 import { TabType } from '../types';
+import { PermanentImage } from './PermanentImage';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -11,13 +12,16 @@ import {
   Users, 
   Cloud, 
   ShieldCheck,
-  ChevronRight 
+  ChevronRight,
+  Building2
 } from 'lucide-react';
 
 interface SidebarProps {
   currentTab: TabType;
   onSelectTab: (tab: TabType) => void;
   allowedTabs?: TabType[];
+  logoUrl?: string;
+  orgName?: string;
 }
 
 interface NavItem {
@@ -37,23 +41,25 @@ const allNavItems: NavItem[] = [
   { id: 'bendahara', label: 'F. Bendahara & Kas', badge: 'Realtime', icon: Wallet },
   { id: 'sensus', label: 'G. Sensus Database Anggota', badge: 'Sahmasy', icon: Users },
   { id: 'kta', label: 'H. Cetak KTA Digital', badge: '55x85mm', icon: FileText },
-  { id: 'google_sync', label: 'Integrasi Google Drive & Sheets', badge: 'Live', icon: Cloud },
-  { id: 'role_management', label: 'I. Role & Management Admin', badge: 'Super Admin', icon: ShieldCheck },
+  { id: 'profil_organisasi', label: 'I. Profil & Custom Logo', badge: 'Identitas', icon: Building2 },
+  { id: 'role_management', label: 'J. Role & Management Admin', badge: 'Super Admin', icon: ShieldCheck },
 ];
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, allowedTabs }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, allowedTabs, logoUrl, orgName }) => {
   const navItems = allowedTabs 
     ? allNavItems.filter(item => allowedTabs.includes(item.id))
     : allNavItems;
 
   return (
-    <aside className="w-full lg:w-72 bg-gradient-to-b from-[#064E3B] to-[#043A2C] text-white flex flex-col rounded-3xl shadow-lg border border-emerald-800/40 overflow-hidden shrink-0">
-      <div className="p-6 border-b border-emerald-800/60 hidden lg:block bg-[#054233]/50 backdrop-blur-sm">
+    <aside className="w-full lg:w-72 xl:w-80 bg-gradient-to-b from-[#064E3B] to-[#043A2C] text-white flex flex-col rounded-3xl shadow-lg border border-emerald-800/40 overflow-hidden shrink-0 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6.5rem)]">
+      <div className="p-5 sm:p-6 border-b border-emerald-800/60 hidden lg:block bg-[#054233]/50 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg border-2 border-emerald-700 overflow-hidden shrink-0">
-            <img src="/logo.jpg" alt="Logo Fokus" className="w-full h-full object-cover" />
+          <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg border-2 border-amber-400 overflow-hidden shrink-0 p-0.5">
+            <PermanentImage src={logoUrl || '/logo.png'} fallbackSrc="/logo.png" alt="Logo Fokus" className="w-full h-full object-contain rounded-full" />
           </div>
-          <h1 className="text-amber-200 font-serif text-lg font-bold tracking-wide leading-tight">MANAJEMEN<br/>FOKUS SAPUDI</h1>
+          <h1 className="text-amber-200 font-serif text-base xl:text-lg font-bold tracking-wide leading-tight uppercase">
+            {orgName || 'MANAJEMEN FOKUS SAPUDI'}
+          </h1>
         </div>
         <div className="mt-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -66,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, allow
         </div>
       </div>
 
-      <nav className="flex-1 py-4 px-3 space-y-1.5 overflow-x-auto lg:overflow-y-auto flex lg:flex-col flex-row gap-2">
+      <nav className="flex-1 py-4 px-3 space-y-1.5 overflow-x-auto lg:overflow-y-auto flex lg:flex-col flex-row gap-2 scrollbar-thin scrollbar-thumb-emerald-700/60">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentTab === item.id;
@@ -103,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab, allow
       </nav>
 
       <div className="p-4 bg-emerald-950/60 border-t border-emerald-800/50 text-emerald-200 text-[11px] hidden lg:flex items-center justify-between backdrop-blur-sm">
-        <span className="font-medium text-emerald-300">Google Drive Sync</span>
+        <span className="font-medium text-emerald-300">Database Server Pusat</span>
         <span className="px-2 py-0.5 rounded-full bg-emerald-900 text-amber-300 font-bold border border-emerald-700/50">Online</span>
       </div>
     </aside>

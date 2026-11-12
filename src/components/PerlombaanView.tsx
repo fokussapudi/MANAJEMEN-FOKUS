@@ -1,16 +1,32 @@
 import React, { useState, useRef } from 'react';
-import { LombaRow } from '../types';
+import { LombaRow, OrganizationProfile } from '../types';
 import { initialLombaRows } from '../data/initialData';
 import { Trophy, Plus, Search, Trash2, Printer, Award, Edit3, Settings2, FileSpreadsheet, Download, Upload } from 'lucide-react';
 import { PrintModal } from './PrintModal';
+import { Pagination } from './Pagination';
 import { downloadCsvTemplate, exportToExcel, parseExcelFile } from '../utils/excelUtils';
+import { matchesYear } from '../utils/filterUtils';
 
 interface PerlombaanViewProps {
+  lombaList?: LombaRow[];
+  setLombaList?: React.Dispatch<React.SetStateAction<LombaRow[]>>;
   onNotify: (title: string, message: string) => void;
+  selectedYear?: string;
+  orgProfile?: OrganizationProfile;
+  logoUrl?: string;
 }
 
-export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
-  const [lombaList, setLombaList] = useState<LombaRow[]>(initialLombaRows);
+export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ 
+  lombaList: propLombaList, 
+  setLombaList: propSetLombaList, 
+  onNotify, 
+  selectedYear = 'Semua',
+  orgProfile,
+  logoUrl
+}) => {
+  const [localLombaList, setLocalLombaList] = useState<LombaRow[]>(initialLombaRows);
+  const lombaList = propLombaList || localLombaList;
+  const setLombaList = propSetLombaList || setLocalLombaList;
   const [activeTab, setActiveTab] = useState<'lomba_1' | 'lomba_2' | 'lomba_3' | 'lomba_4' | 'piagam'>('lomba_1');
   const [searchTerm, setSearchTerm] = useState('');
   const [showPrintListModal, setShowPrintListModal] = useState(false);
@@ -38,23 +54,34 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
 
   // Fully Customizable Piagam State
   const [selectedPiagam, setSelectedPiagam] = useState<LombaRow | null>(null);
-  const [piagamHeader, setPiagamHeader] = useState('PANITIA ORGANISASI MANAJEMEN FOKUS SAPUDI');
-  const [piagamNo, setPiagamNo] = useState('No. 042/FOKUS-SPD/IV/2026');
+  const [piagamHeader, setPiagamHeader] = useState('PANITIA PERLOMBAAN FOKUS PULAU SAPUDI');
+  const [piagamNo, setPiagamNo] = useState('No.     /FOKUS-XXII/KU/PP/II/2027 M');
   const [piagamTitle, setPiagamTitle] = useState('PIAGAM PENGHARGAAN');
   const [piagamSubTitle, setPiagamSubTitle] = useState('Diberikan Dengan Hormat Kepada:');
-  const [piagamDesc, setPiagamDesc] = useState('Atas prestasi dan partisipasi gemilang sebagai predikat di bawah ini dalam ajang kompetisi resmi.');
-  const [piagamLocationDate, setPiagamLocationDate] = useState('Sapudi, 15 Ramadhan 1447 H');
-  const [piagamSign1Title, setPiagamSign1Title] = useState('Ketua Panitia Fokus');
-  const [piagamSign1Name, setPiagamSign1Name] = useState('AHMAD FAUZI');
-  const [piagamSign2Title, setPiagamSign2Title] = useState('Dewan Pembina');
-  const [piagamSign2Name, setPiagamSign2Name] = useState('KYAI KHOLIL');
+  const [piagamDesc, setPiagamDesc] = useState('Atas prestasi dan partisipasi gemilang sebagai predikat dibawah ini dalam ajang kompetisi resmi.');
+  const [piagamLocationDate, setPiagamLocationDate] = useState('Sapudi, 16 Ramadhan 1448 H');
+  const [piagamSign1Title, setPiagamSign1Title] = useState('Koord. Perlombaan');
+  const [piagamSign1Name, setPiagamSign1Name] = useState('Ust. Wahyu Akbar Ramadhani, S.Ag');
+  const [piagamSign2Title, setPiagamSign2Title] = useState('Ketua Umum Fokus');
+  const [piagamSign2Name, setPiagamSign2Name] = useState('Ust. Subairi, S.Ag');
   const [customBgImage, setCustomBgImage] = useState<string | null>(null);
 
+  // Piagam layout precision / alignment controls state
+  const [piagamPaddingTop, setPiagamPaddingTop] = useState<number>(10);
+  const [piagamPaddingBottom, setPiagamPaddingBottom] = useState<number>(15);
+  const [piagamPaddingLeft, setPiagamPaddingLeft] = useState<number>(15);
+  const [piagamPaddingRight, setPiagamPaddingRight] = useState<number>(15);
+  const [piagamShiftY, setPiagamShiftY] = useState<number>(-15);
+  const [piagamFontScale, setPiagamFontScale] = useState<number>(100);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   const competitionTabs = [
-    { id: 'lomba_1', name: 'Lomba Tartil Tingkat Anak-Anak', fullName: 'Lomba Tartil Tingkat Anak-Anak', col1: 'Fashohah', col2: 'Tajwid', col3: 'Irama' },
-    { id: 'lomba_2', name: 'Lomba Sholat Munfarid Tingkat Anak-Anak', fullName: 'Lomba Sholat Munfarid Tingkat Anak-Anak', col1: 'Gerakan', col2: 'Bacaan', col3: 'Thumakninah' },
-    { id: 'lomba_3', name: 'Lomba Siroh Nabawiyah', fullName: 'Lomba Siroh Nabawiyah', col1: 'Hafalan', col2: 'Pemahaman', col3: 'Ekspresi' },
-    { id: 'lomba_4', name: 'Festival Hadroh Tingkat Umum', fullName: 'Festival Hadroh Tingkat Umum', col1: 'Vocal', col2: 'Pukulan', col3: 'Adab & Penampilan' },
+    { id: 'lomba_1', name: 'Lomba Tartil Tingkat Anak-Anak', fullName: 'Lomba Tartil Tingkat Anak-Anak', col1: 'FASOHAH', col2: 'TAJWID', col3: 'IRAMA & ADAB' },
+    { id: 'lomba_2', name: 'Lomba Sholat Munfarid Tingkat Anak-Anak', fullName: 'Lomba Sholat Munfarid Tingkat Anak-Anak', col1: 'FASOHAH', col2: 'KETERTIBAN', col3: 'ADAB' },
+    { id: 'lomba_3', name: 'Lomba Siroh Nabawiyah', fullName: 'Lomba Siroh Nabawiyah', col1: 'PENYISIHAN', col2: 'SEMI FINAL', col3: 'FINAL' },
+    { id: 'lomba_4', name: 'Festival Hadroh Tingkat Umum', fullName: 'Festival Hadroh Tingkat Umum', col1: 'VOCAL', col2: 'PUKULAN', col3: 'PENAMPILAN & ADAB' },
   ];
 
   const currentCompMeta = competitionTabs.find(t => t.id === activeTab);
@@ -63,18 +90,22 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
     const matchesSearch = item.namaPeserta.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           item.utusan.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           item.pengasuh.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesYearFilter = matchesYear(item, selectedYear);
+    if (!matchesYearFilter) return false;
     if (activeTab === 'piagam') {
       return matchesSearch;
     }
     return item.jenisLomba === currentCompMeta?.fullName && matchesSearch;
   });
 
+  const paginatedList = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   const [editingParticipantId, setEditingParticipantId] = useState<string | null>(null);
 
   const openAddModal = () => {
     setEditingParticipantId(null);
     setJenisLombaInput('Lomba Tartil Tingkat Anak-Anak');
-    setTingkat('Kabupaten / Se-Sapudi');
+    setTingkat('Antar Lembaga/Musholla/Madrasah/Surau Se-Sapudi');
     setNamaPeserta('');
     setBinBinti('');
     setUtusan('');
@@ -138,7 +169,8 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
         col2: '-',
         col3: '-',
         juara: 'Belum Ditentukan',
-        berkasUrl: 'berkas_lomba.pdf'
+        berkasUrl: 'berkas_lomba.pdf',
+        tahun: selectedYear !== 'Semua' ? selectedYear : '2026'
       };
       setLombaList([newRow, ...lombaList]);
       onNotify('Peserta Lomba Didaftarkan', `Peserta ${newRow.namaPeserta} berhasil ditambahkan ke daftar.`);
@@ -151,7 +183,7 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
   const handleScoreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedParticipantId) {
-      onNotify('Pilih Peserta', 'Silakan pilih peserta yang akan diberi nilai & predikat juara.');
+      onNotify('Pilih Peserta', 'Silakan pilih peserta yang akan diberi nilai & juara.');
       return;
     }
 
@@ -173,7 +205,7 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
     setCol1('');
     setCol2('');
     setCol3('');
-    onNotify('Penilaian & Juara Disimpan', 'Nilai dan predikat juara peserta berhasil diperbarui.');
+    onNotify('Penilaian & Juara Disimpan', 'Nilai dan juara peserta berhasil diperbarui.');
   };
 
   const openScoreModalForParticipant = (item: LombaRow) => {
@@ -199,13 +231,12 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
   // Excel Handlers
   const handleDownloadTemplate = () => {
     const headers = ['NO', 'NAMA PESERTA', 'BIN / BINTI', 'UTUSAN', 'PENGASUH', 'ALAMAT', 'NO HANDPHONE', 'JENIS LOMBA', 'TINGKAT'];
-    const sample = [1, 'Muhammad Ilham', 'H. Ahmad', 'Ranting Dungkek', 'KH. Kholil', 'Sapudi', '081234567890', 'Lomba Tartil Tingkat Anak-Anak', 'Se-Sapudi'];
     downloadCsvTemplate(`Template_Peserta_Perlombaan`, headers, sample);
     onNotify('Template Didownload', 'Template Excel peserta lomba berhasil diunduh.');
   };
 
   const handleExportExcel = () => {
-    const headers = ['NO', 'NAMA PESERTA', 'BIN / BINTI', 'UTUSAN', 'PENGASUH', 'ALAMAT', 'NO HANDPHONE', 'JENIS LOMBA', 'TINGKAT', 'JUARA'];
+    const headers = ['NO', 'NAMA PESERTA', 'BIN / BINTI', 'UTUSAN / DELEGASI', 'PENGASUH', 'ALAMAT LENGKAP', 'NO HANDPHONE / WA', 'CABANG LOMBA', 'TINGKAT KEJUARAAN', 'PREDIKAT JUARA'];
     const rows = filtered.map((item, idx) => [
       idx + 1,
       item.namaPeserta,
@@ -218,8 +249,17 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
       item.tingkat,
       item.juara
     ]);
-    exportToExcel(`Data_Perlombaan_${activeTab}`, headers, rows);
-    onNotify('Export Excel Berhasil', 'Data peserta lomba berhasil diexport.');
+    exportToExcel(
+      `Data_Perlombaan_${activeTab}`,
+      headers,
+      rows,
+      {
+        title: `ORGANISASI FOKUS PULAU SAPUDI - DATA PERLOMBAAN (${currentCompMeta?.fullName || activeTab.toUpperCase()})`,
+        subtitle: 'Daftar Peserta, Utusan, dan Rekapitulasi Penilaian',
+        sheetName: 'Peserta & Juara'
+      }
+    );
+    onNotify('Export Excel Berhasil', 'Data peserta lomba berhasil diexport ke Excel (.xlsx).');
   };
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -342,7 +382,10 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
         {competitionTabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => {
+              setActiveTab(tab.id as any);
+              setCurrentPage(1);
+            }}
             className={`p-4 rounded-2xl text-left border transition flex flex-col justify-between ${
               activeTab === tab.id
                 ? 'bg-emerald-900 text-white border-emerald-950 shadow-md'
@@ -361,7 +404,10 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
 
         {/* Piagam Tab */}
         <button
-          onClick={() => setActiveTab('piagam')}
+          onClick={() => {
+            setActiveTab('piagam');
+            setCurrentPage(1);
+          }}
           className={`p-4 rounded-2xl text-left border transition flex flex-col justify-between ${
             activeTab === 'piagam'
               ? 'bg-amber-900 text-white border-amber-950 shadow-md'
@@ -397,7 +443,10 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
               type="text"
               placeholder="Cari nama peserta / utusan..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={e => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full pl-9 pr-4 py-1.5 text-xs bg-emerald-800/80 border border-emerald-700 rounded-xl text-white placeholder-emerald-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
             />
           </div>
@@ -420,7 +469,7 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
                   </>
                 )}
                 <th className="p-3 text-center">PREDIKAT / JUARA</th>
-                <th className="p-3 text-center">AKSI / KUSTOM PIAGAM A4</th>
+                <th className="p-3 text-center">AKSI / KUSTOM PIAGAM F4</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-50 text-emerald-900">
@@ -431,75 +480,88 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
                   </td>
                 </tr>
               ) : (
-                filtered.map((item, index) => (
-                  <tr key={item.id} className="hover:bg-emerald-50/50 transition">
-                    <td className="p-3 text-center font-bold text-emerald-700">{index + 1}</td>
-                    <td className="p-3">
-                      <p className="font-semibold text-emerald-950">{item.jenisLomba}</p>
-                      <p className="text-[10px] text-emerald-600">Tingkat: {item.tingkat}</p>
-                    </td>
-                    <td className="p-3">
-                      <p className="font-bold text-emerald-950">{item.namaPeserta}</p>
-                      <p className="text-[10px] text-emerald-600">Bin/Binti: {item.binBinti}</p>
-                    </td>
-                    <td className="p-3">
-                      <p className="font-semibold text-emerald-900">{item.utusan}</p>
-                      <p className="text-[10px] text-emerald-600">Pengasuh: {item.pengasuh}</p>
-                    </td>
-                    <td className="p-3">
-                      <p className="text-emerald-900">{item.alamat}</p>
-                      <p className="text-[10px] font-mono text-emerald-700">{item.noHandphone}</p>
-                    </td>
-                    {activeTab !== 'piagam' && (
-                      <>
-                        <td className="p-3 text-center font-semibold bg-emerald-50/40">{item.col1}</td>
-                        <td className="p-3 text-center font-semibold bg-emerald-50/40">{item.col2}</td>
-                        <td className="p-3 text-center font-semibold bg-emerald-50/40">{item.col3}</td>
-                      </>
-                    )}
-                    <td className="p-3 text-center">
-                      <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${
-                        item.juara === 'Belum Ditentukan' ? 'bg-gray-100 text-gray-600' : 'bg-amber-100 text-amber-900'
-                      }`}>
-                        {item.juara}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center space-x-1">
-                      <button
-                        onClick={() => openEditModal(item)}
-                        className="p-1.5 bg-blue-100 hover:bg-blue-200 text-blue-900 rounded-lg transition inline-block"
-                        title="Edit Data Peserta"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => openScoreModalForParticipant(item)}
-                        className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg transition inline-block"
-                        title="Beri Nilai & Juara"
-                      >
-                        <Award className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => openPiagamModal(item)}
-                        className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-[10px] font-bold transition inline-flex items-center gap-1.5 shadow"
-                      >
-                        <Printer className="w-3.5 h-3.5 text-amber-200" />
-                        <span>Kustom & Cetak Piagam</span>
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition inline-block"
-                        title="Hapus Peserta"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                paginatedList.map((item, index) => {
+                  const globalIdx = (currentPage - 1) * pageSize + index + 1;
+                  return (
+                    <tr key={item.id} className="hover:bg-emerald-50/50 transition">
+                      <td className="p-3 text-center font-bold text-emerald-700">{globalIdx}</td>
+                      <td className="p-3">
+                        <p className="font-semibold text-emerald-950">{item.jenisLomba}</p>
+                        <p className="text-[10px] text-emerald-600">Tingkat: {item.tingkat}</p>
+                      </td>
+                      <td className="p-3">
+                        <p className="font-bold text-emerald-950">{item.namaPeserta}</p>
+                        <p className="text-[10px] text-emerald-600">Bin/Binti: {item.binBinti}</p>
+                      </td>
+                      <td className="p-3">
+                        <p className="font-semibold text-emerald-900">{item.utusan}</p>
+                        <p className="text-[10px] text-emerald-600">Pengasuh: {item.pengasuh}</p>
+                      </td>
+                      <td className="p-3">
+                        <p className="text-emerald-900">{item.alamat}</p>
+                        <p className="text-[10px] font-mono text-emerald-700">{item.noHandphone}</p>
+                      </td>
+                      {activeTab !== 'piagam' && (
+                        <>
+                          <td className="p-3 text-center font-semibold bg-emerald-50/40">{item.col1}</td>
+                          <td className="p-3 text-center font-semibold bg-emerald-50/40">{item.col2}</td>
+                          <td className="p-3 text-center font-semibold bg-emerald-50/40">{item.col3}</td>
+                        </>
+                      )}
+                      <td className="p-3 text-center">
+                        <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] ${
+                          item.juara === 'Belum Ditentukan' ? 'bg-gray-100 text-gray-600' : 'bg-amber-100 text-amber-900'
+                        }`}>
+                          {item.juara}
+                        </span>
+                      </td>
+                      <td className="p-3 text-center space-x-1">
+                        <button
+                          onClick={() => openEditModal(item)}
+                          className="p-1.5 bg-blue-100 hover:bg-blue-200 text-blue-900 rounded-lg transition inline-block"
+                          title="Edit Data Peserta"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => openScoreModalForParticipant(item)}
+                          className="p-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg transition inline-block"
+                          title="Beri Nilai & Juara"
+                        >
+                          <Award className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => openPiagamModal(item)}
+                          className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-[10px] font-bold transition inline-flex items-center gap-1.5 shadow"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-amber-200" />
+                          <span>Kustom & Cetak Piagam</span>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition inline-block"
+                          title="Hapus Peserta"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filtered.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          itemLabel="peserta"
+        />
       </div>
 
       {/* Add / Edit Participant Modal */}
@@ -524,7 +586,7 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
                   <option value="Lomba Tartil Tingkat Anak-Anak">Lomba Tartil Tingkat Anak-Anak</option>
                   <option value="Lomba Sholat Munfarid Tingkat Anak-Anak">Lomba Sholat Munfarid Tingkat Anak-Anak</option>
                   <option value="Lomba Siroh Nabawiyah">Lomba Siroh Nabawiyah</option>
-                  <option value="Festival Hadroh Tingkat Umum">Festival Hadroh Tingkat Umum</option>
+                  <option value="Festival Hadroh Tingkat Umum">Festival Hadrah Tingkat Umum</option>
                 </select>
               </div>
 
@@ -565,7 +627,7 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-emerald-900 mb-1">Nama Pengasuh / Pembimbing</label>
+                  <label className="block font-semibold text-emerald-900 mb-1">Nama Pengasuh / Kepala</label>
                   <input
                     type="text"
                     placeholder="Contoh: KH. Kholil"
@@ -717,11 +779,11 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
                     <option value="Juara I">Juara I</option>
                     <option value="Juara II">Juara II</option>
                     <option value="Juara III">Juara III</option>
-                    <option value="Juara Harapan I">Juara Harapan I</option>
-                    <option value="Juara Harapan II">Juara Harapan II</option>
-                    <option value="Juara Harapan III">Juara Harapan III</option>
+                    <option value="Juara Harapan I">Harapan I</option>
+                    <option value="Juara Harapan II">Harapan II</option>
+                    <option value="Juara Harapan III">Harapan III</option>
                     <option value="Juara Favorit">Juara Favorit</option>
-                    <option value="Juara Umum I">Juara Umum I</option>
+                    <option value="Juara Umum I">Juara Umum</option>
                     <option value="Peserta Terbaik">Peserta Terbaik (Partisipasi)</option>
                     <option value="custom">✏️ Ketik Manual Custom...</option>
                   </select>
@@ -759,16 +821,16 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
         </div>
       )}
 
-      {/* FULLY CUSTOMIZABLE A4 PIAGAM MODAL & EDITOR */}
+      {/* FULLY CUSTOMIZABLE F4 PIAGAM MODAL & EDITOR */}
       {selectedPiagam && (
-        <PrintModal title={`Kustomisasi & Cetak Piagam A4 - ${selectedPiagam.namaPeserta}`} onClose={() => setSelectedPiagam(null)}>
+        <PrintModal title={`Kustomisasi & Cetak Piagam F4 - ${selectedPiagam.namaPeserta}`} onClose={() => setSelectedPiagam(null)}>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start max-w-6xl mx-auto">
             
             {/* Left: Customization Form controls */}
             <div className="lg:col-span-5 bg-emerald-50/80 p-5 rounded-2xl border border-emerald-200 space-y-3 text-xs shadow-inner">
               <div className="flex items-center gap-2 pb-2 border-b border-emerald-200 text-emerald-950 font-bold">
                 <Settings2 className="w-4 h-4 text-amber-700" />
-                <span>Panel Kustomisasi Isi Piagam A4</span>
+                <span>Panel Kustomisasi Isi Piagam F4</span>
               </div>
 
               {/* Upload Custom Certificate Design Background */}
@@ -804,7 +866,97 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
                 </div>
               </div>
 
+              {/* Presisi & Posisi Cetak A4 */}
+              <div className="p-3 bg-white border border-amber-300 rounded-xl shadow-sm space-y-2.5">
+                <div className="flex items-center gap-1.5 text-amber-900 font-bold border-b border-amber-100 pb-1.5">
+                  <Settings2 className="w-3.5 h-3.5 text-amber-700" />
+                  <span className="text-[11px] uppercase tracking-wider">Pengaturan Presisi Posisi F4</span>
+                </div>
+                
+                <div>
+                  <div className="flex justify-between text-[10px] font-bold text-emerald-950 mb-0.5">
+                    <span>Geser Posisi Vertikal (Ke Atas/Bawah)</span>
+                    <span className="text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded">{piagamShiftY}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-80"
+                    max="80"
+                    value={piagamShiftY}
+                    onChange={e => setPiagamShiftY(parseInt(e.target.value))}
+                    className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                  />
+                  <div className="flex justify-between text-[8px] text-gray-500 mt-0.5">
+                    <span>← Ke Atas (Negatif)</span>
+                    <span>Ke Bawah (Positif) →</span>
+                  </div>
+                </div>
 
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="flex justify-between text-[10px] font-semibold text-emerald-950 mb-0.5">
+                      <span>Margin Atas</span>
+                      <span className="text-amber-800">{piagamPaddingTop}mm</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="45"
+                      value={piagamPaddingTop}
+                      onChange={e => setPiagamPaddingTop(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] font-semibold text-emerald-950 mb-0.5">
+                      <span>Margin Bawah</span>
+                      <span className="text-amber-800">{piagamPaddingBottom}mm</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="45"
+                      value={piagamPaddingBottom}
+                      onChange={e => setPiagamPaddingBottom(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="flex justify-between text-[10px] font-semibold text-emerald-950 mb-0.5">
+                      <span>Margin Samping</span>
+                      <span className="text-amber-800">{piagamPaddingLeft}mm</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="45"
+                      value={piagamPaddingLeft}
+                      onChange={e => {
+                        setPiagamPaddingLeft(parseInt(e.target.value));
+                        setPiagamPaddingRight(parseInt(e.target.value));
+                      }}
+                      className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] font-semibold text-emerald-950 mb-0.5">
+                      <span>Ukuran Tulisan</span>
+                      <span className="text-amber-800">{piagamFontScale}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="75"
+                      max="125"
+                      value={piagamFontScale}
+                      onChange={e => setPiagamFontScale(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                    />
+                  </div>
+                </div>
+              </div>
 
               <div>
                 <label className="block font-semibold text-emerald-900 mb-1">Header Instansi / Yayasan</label>
@@ -879,7 +1031,7 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-emerald-900 mb-1">Predikat / Juara</label>
+                  <label className="block font-semibold text-emerald-900 mb-1">Juara / Harapan</label>
                   <input
                     type="text"
                     value={selectedPiagam.juara}
@@ -890,7 +1042,7 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
               </div>
 
               <div>
-                <label className="block font-semibold text-emerald-900 mb-1">Cabang Lomba & Tingkat</label>
+                <label className="block font-semibold text-emerald-900 mb-1">Jenis Lomba & Tingkat</label>
                 <input
                   type="text"
                   value={selectedPiagam.jenisLomba}
@@ -918,7 +1070,7 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-emerald-900 mb-1">Tempat & Tanggal Terbit</label>
+                  <label className="block font-semibold text-emerald-900 mb-1">Tempat & Tanggal</label>
                   <input
                     type="text"
                     value={piagamLocationDate}
@@ -967,15 +1119,27 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
                   className="w-full py-3 bg-amber-700 hover:bg-amber-800 text-white rounded-xl font-bold text-xs tracking-wider uppercase shadow-md flex items-center justify-center gap-2"
                 >
                   <Printer className="w-4 h-4 text-amber-200" />
-                  <span>Cetak Dokumen A4 Presisi</span>
+                  <span>Cetak Dokumen F4 Presisi</span>
                 </button>
               </div>
             </div>
 
             {/* Right: Precise A4 Landscape Printable Certificate Preview matching the reference design */}
             <div 
-              className="lg:col-span-7 bg-white rounded-2xl shadow-xl border border-amber-400/60 relative overflow-hidden text-center flex flex-col justify-between transition-all duration-300 print-certificate-container aspect-[1.414/1] max-w-4xl mx-auto p-4 sm:p-6"
-              style={customBgImage ? { backgroundImage: `url(${customBgImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+              className="lg:col-span-7 bg-white rounded-2xl shadow-xl border border-amber-400/60 relative overflow-hidden text-center flex flex-col justify-between transition-all duration-300 print-certificate-container aspect-[1.414/1] max-w-4xl mx-auto"
+              style={{
+                ...(customBgImage ? { backgroundImage: `url(${customBgImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}),
+                paddingTop: `${piagamPaddingTop}mm`,
+                paddingBottom: `${piagamPaddingBottom}mm`,
+                paddingLeft: `${piagamPaddingLeft}mm`,
+                paddingRight: `${piagamPaddingRight}mm`,
+                fontSize: `${piagamFontScale}%`,
+                '--piagam-padding-top': `${piagamPaddingTop}mm`,
+                '--piagam-padding-bottom': `${piagamPaddingBottom}mm`,
+                '--piagam-padding-left': `${piagamPaddingLeft}mm`,
+                '--piagam-padding-right': `${piagamPaddingRight}mm`,
+                '--piagam-shift-y': `${piagamShiftY}px`,
+              } as React.CSSProperties}
             >
               {/* Left & Right Decorative Curved Waves (Only if no custom background uploaded) */}
               {!customBgImage && (
@@ -996,68 +1160,74 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
                 </>
               )}
 
-              {/* Certificate Header */}
-              <div className="relative z-20 pt-1">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white border border-amber-400 overflow-hidden shrink-0 shadow-xs">
-                    <img src="/logo.jpg" alt="Logo Fokus" className="w-full h-full object-cover" />
+              {/* Dynamic Positioning Content Wrapper */}
+              <div 
+                className="print-certificate-content flex flex-col justify-between h-full w-full relative z-20"
+                style={{ transform: `translateY(${piagamShiftY}px)` }}
+              >
+                {/* Certificate Header */}
+                <div className="relative z-20 pt-1">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white border border-amber-400 overflow-hidden shrink-0 shadow-xs">
+                      <img src={logoUrl || orgProfile?.logoUrl || "/logo.png"} alt="Logo Fokus" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
+                    </div>
+                    <p className="text-[7px] sm:text-[8px] font-bold tracking-[0.15em] text-emerald-950 uppercase">{piagamHeader}</p>
                   </div>
-                  <p className="text-[7px] sm:text-[8px] font-bold tracking-[0.15em] text-emerald-950 uppercase">{piagamHeader}</p>
-                </div>
-                <div className="flex justify-between items-center px-8 text-[5px] sm:text-[6px] text-emerald-800 font-mono tracking-widest">
-                  <span>{piagamNo}</span>
-                  <span>{piagamLocationDate}</span>
-                </div>
-                
-                <h1 className="text-base sm:text-xl font-serif font-extrabold text-emerald-950 mt-1 tracking-wider uppercase">
-                  {piagamTitle}
-                </h1>
+                  <div className="flex justify-between items-center px-8 text-[5px] sm:text-[6px] text-emerald-800 font-mono tracking-widest">
+                    <span>{piagamNo}</span>
+                    <span>{piagamLocationDate}</span>
+                  </div>
+                  
+                  <h1 className="text-base sm:text-xl font-serif font-extrabold text-emerald-950 mt-1 tracking-wider uppercase">
+                    {piagamTitle}
+                  </h1>
 
-                <p className="text-[6px] sm:text-[7px] font-semibold tracking-wider text-emerald-900 uppercase mt-0.5">
-                  {piagamSubTitle}
-                </p>
-              </div>
-
-              {/* Recipient Details */}
-              <div className="relative z-25 py-1">
-                <div className="max-w-md mx-auto">
-                  <h2 className="text-base sm:text-xl font-serif font-bold text-emerald-950 tracking-wide pb-0.5 italic">
-                    {selectedPiagam.namaPeserta}
-                  </h2>
-                  <div className="w-36 sm:w-48 h-0.5 bg-gradient-to-r from-transparent via-emerald-800 to-transparent mx-auto mt-0.5 mb-1"></div>
+                  <p className="text-[6px] sm:text-[7px] font-semibold tracking-wider text-emerald-900 uppercase mt-0.5">
+                    {piagamSubTitle}
+                  </p>
                 </div>
 
-                <div className="inline-block px-2 py-0.5 rounded-full bg-emerald-50/90 border border-emerald-200 text-emerald-950 text-[8px] sm:text-[9px] font-semibold tracking-wide">
-                  Bin/Binti: <span className="font-bold">{selectedPiagam.binBinti}</span> &nbsp;|&nbsp; Utusan: <span className="font-bold">{selectedPiagam.utusan}</span>
-                </div>
+                {/* Recipient Details */}
+                <div className="relative z-25 py-1">
+                  <div className="max-w-md mx-auto">
+                    <h2 className="text-base sm:text-xl font-serif font-bold text-emerald-950 tracking-wide pb-0.5 italic">
+                      {selectedPiagam.namaPeserta}
+                    </h2>
+                    <div className="w-36 sm:w-48 h-0.5 bg-gradient-to-r from-transparent via-emerald-800 to-transparent mx-auto mt-0.5 mb-1"></div>
+                  </div>
 
-                <p className="text-[8px] sm:text-[9px] text-emerald-900 max-w-md mx-auto leading-relaxed mt-1 px-4 font-medium">
-                  {piagamDesc}
-                </p>
+                  <div className="inline-block px-2 py-0.5 rounded-full bg-emerald-50/90 border border-emerald-200 text-emerald-950 text-[8px] sm:text-[9px] font-semibold tracking-wide">
+                    Bin/Binti: <span className="font-bold">{selectedPiagam.binBinti}</span> &nbsp;|&nbsp; Utusan: <span className="font-bold">{selectedPiagam.utusan}</span>
+                  </div>
 
-                <div className="mt-1 inline-block px-2.5 py-0.5 rounded-lg bg-amber-100/90 border border-amber-400 text-amber-950 font-bold text-[8px] sm:text-[8.5px] shadow-xs tracking-wide">
-                  {selectedPiagam.juara} — {selectedPiagam.jenisLomba} ({selectedPiagam.tingkat})
-                </div>
-              </div>
+                  <p className="text-[8px] sm:text-[9px] text-emerald-900 max-w-md mx-auto leading-relaxed mt-1 px-4 font-medium">
+                    {piagamDesc}
+                  </p>
 
-              {/* Signatures & Seal */}
-              <div className="relative z-20 pb-1 flex justify-between items-end px-4 sm:px-6 text-[9px]">
-                <div className="text-center max-w-[120px] sm:max-w-[160px]">
-                  <div className="h-5 sm:h-6"></div>
-                  <p className="font-bold text-emerald-950 underline decoration-amber-600 text-[10px] tracking-wider">({piagamSign1Name})</p>
-                  <p className="text-emerald-800 font-medium text-[8px] mt-0.5 leading-tight">{piagamSign1Title}</p>
-                </div>
-
-                <div className="flex flex-col items-center">
-                  <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full border-2 border-amber-500 flex items-center justify-center bg-white shadow-md relative overflow-hidden">
-                    <img src="/logo.jpg" alt="Stempel Logo Fokus" className="w-full h-full object-cover" />
+                  <div className="mt-1 inline-block px-2.5 py-0.5 rounded-lg bg-amber-100/90 border border-amber-400 text-amber-950 font-bold text-[8px] sm:text-[8.5px] shadow-xs tracking-wide">
+                    {selectedPiagam.juara} — {selectedPiagam.jenisLomba} ({selectedPiagam.tingkat})
                   </div>
                 </div>
 
-                <div className="text-center max-w-[120px] sm:max-w-[160px]">
-                  <div className="h-5 sm:h-6"></div>
-                  <p className="font-bold text-emerald-950 underline decoration-amber-600 text-[10px] tracking-wider">({piagamSign2Name})</p>
-                  <p className="text-emerald-800 font-medium text-[8px] mt-0.5 leading-tight">{piagamSign2Title}</p>
+                {/* Signatures & Seal */}
+                <div className="relative z-20 pb-1 flex justify-between items-end px-4 sm:px-6 text-[9px]">
+                  <div className="text-center max-w-[120px] sm:max-w-[160px]">
+                    <div className="h-5 sm:h-6"></div>
+                    <p className="font-bold text-emerald-950 underline decoration-amber-600 text-[10px] tracking-wider">({piagamSign1Name})</p>
+                    <p className="text-emerald-800 font-medium text-[8px] mt-0.5 leading-tight">{piagamSign1Title}</p>
+                  </div>
+
+                  <div className="flex flex-col items-center">
+                    <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full border-2 border-amber-500 flex items-center justify-center bg-white shadow-md relative overflow-hidden">
+                      <img src={logoUrl || orgProfile?.logoUrl || "/logo.png"} alt="Stempel Logo Fokus" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
+                    </div>
+                  </div>
+
+                  <div className="text-center max-w-[120px] sm:max-w-[160px]">
+                    <div className="h-5 sm:h-6"></div>
+                    <p className="font-bold text-emerald-950 underline decoration-amber-600 text-[10px] tracking-wider">({piagamSign2Name})</p>
+                    <p className="text-emerald-800 font-medium text-[8px] mt-0.5 leading-tight">{piagamSign2Title}</p>
+                  </div>
                 </div>
               </div>
 
@@ -1069,11 +1239,33 @@ export const PerlombaanView: React.FC<PerlombaanViewProps> = ({ onNotify }) => {
 
       {/* Print List PDF Modal */}
       {showPrintListModal && (
-        <PrintModal title={`Daftar Peserta & Nilai Perlombaan - ${activeTab.toUpperCase()}`} onClose={() => setShowPrintListModal(false)}>
-          <div className="text-center space-y-4 font-sans text-xs">
-            <h2 className="text-base font-serif font-bold text-emerald-950 uppercase">
-              REKAPITULASI DATA PESERTA PERLOMBAAN {activeTab.toUpperCase()}
-            </h2>
+        <PrintModal 
+          title={`Daftar Peserta & Nilai Perlombaan - ${activeTab.toUpperCase()}`} 
+          onClose={() => setShowPrintListModal(false)}
+          orgProfile={orgProfile}
+          logoUrl={logoUrl}
+        >
+          <div className="space-y-4 font-sans text-xs">
+            {/* Official Kop Surat */}
+            <div className="flex items-center gap-4 pb-4 border-b-2 border-emerald-900">
+              <div className="w-14 h-14 bg-white rounded-full border border-amber-400 overflow-hidden shrink-0 shadow-xs p-0.5">
+                <img src={logoUrl || orgProfile?.logoUrl || '/logo.png'} alt="Logo" className="w-full h-full object-contain rounded-full" referrerPolicy="no-referrer" />
+              </div>
+              <div className="flex-1 text-center pr-6">
+                <h2 className="text-sm sm:text-base font-serif font-bold text-emerald-950 uppercase tracking-wide">
+                  {orgProfile?.namaOrganisasi || 'FORUM KOMUNIKASI SANTRI (FOKUS) SAPUDI'}
+                </h2>
+                <p className="text-[10px] text-emerald-800 mt-0.5 font-sans">
+                  {orgProfile?.alamatSekretariat || 'Pulau Sapudi, Kab. Sumenep, Jawa Timur'} | Telp/WA: {orgProfile?.noTelepon || '+62 812-3456-7890'}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <h2 className="text-base font-serif font-bold text-emerald-950 uppercase">
+                REKAPITULASI DATA PESERTA PERLOMBAAN {activeTab.toUpperCase()}
+              </h2>
+            </div>
             <div className="border-t border-b border-emerald-200 py-3 text-left">
               <table className="w-full text-xs">
                 <thead>

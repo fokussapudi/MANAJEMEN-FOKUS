@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: 'AvantGarde Bk BT', 'Avant Garde', AvantGarde, 'ITC Avant Garde Gothic', 'Century Gothic', AppleGothic, sans-serif;
+}
+
+body, html, #root {
+  font-family: 'AvantGarde Bk BT', 'Avant Garde', AvantGarde, 'ITC Avant Garde Gothic', 'Century Gothic', AppleGothic, sans-serif !important;
+}
+
 @media print {
   html, body, #root {
     height: auto !important;
@@ -29,13 +37,16 @@
     width: 100vw !important;
     height: 100vh !important;
     margin: 0 !important;
-    padding: 20mm !important;
+    padding: var(--piagam-padding-top, 10mm) var(--piagam-padding-right, 15mm) var(--piagam-padding-bottom, 15mm) var(--piagam-padding-left, 15mm) !important;
     border: none !important;
     box-shadow: none !important;
     background: white !important;
     display: flex !important;
     flex-direction: column !important;
     justify-content: space-between !important;
+  }
+  .print-certificate-content {
+    transform: translateY(var(--piagam-shift-y, -15px)) !important;
   }
 }
 

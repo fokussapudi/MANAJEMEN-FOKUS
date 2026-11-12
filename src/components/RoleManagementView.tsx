@@ -27,8 +27,10 @@ import {
   Wallet, 
   Cloud, 
   User, 
-  RefreshCw 
+  RefreshCw,
+  Building2
 } from 'lucide-react';
+import { Pagination } from './Pagination';
 
 interface RoleManagementViewProps {
   users: UserAccount[];
@@ -42,15 +44,16 @@ interface RoleManagementViewProps {
 
 export const ALL_TAB_MODULES: { id: TabType; label: string; icon: any; category: string }[] = [
   { id: 'dashboard', label: 'Dashboard & Statistik', icon: LayoutDashboard, category: 'Utama' },
-  { id: 'fokus', label: 'A. FOKUS & Expedisi Surat', icon: FileText, category: 'Sekretariat' },
-  { id: 'pengajian', label: 'B. Pengajian (Undangan)', icon: BookOpen, category: 'Sekretariat' },
-  { id: 'perlombaan', label: 'C. Perlombaan & Piagam', icon: Trophy, category: 'Panitia' },
-  { id: 'khotmil', label: 'D. Khotmil Qur\'an', icon: BookmarkCheck, category: 'Ibadah' },
-  { id: 'hadrah', label: 'E. Jam\'iyatul Hadrah', icon: Music, category: 'Seni' },
-  { id: 'bendahara', label: 'F. Bendahara & Kas Realtime', icon: Wallet, category: 'Keuangan' },
-  { id: 'sensus', label: 'G. Sensus Database Anggota', icon: Users, category: 'Database' },
-  { id: 'google_sync', label: 'Integrasi Google Drive & Sheets', icon: Cloud, category: 'Sistem' },
-  { id: 'role_management', label: 'H. Role & Manajemen Admin', icon: ShieldCheck, category: 'Super Admin' },
+  { id: 'fokus', label: 'FOKUS & Expedisi Surat', icon: FileText, category: 'Sekretariat' },
+  { id: 'pengajian', label: 'Pengajian (Undangan)', icon: BookOpen, category: 'Sekretariat' },
+  { id: 'perlombaan', label: 'Perlombaan & Piagam', icon: Trophy, category: 'Panitia' },
+  { id: 'khotmil', label: 'Khotmil Qur\'an', icon: BookmarkCheck, category: 'Ibadah' },
+  { id: 'hadrah', label: 'Jam\'iyatul Hadrah', icon: Music, category: 'Seni' },
+  { id: 'bendahara', label: 'Bendahara & Kas Realtime', icon: Wallet, category: 'Keuangan' },
+  { id: 'sensus', label: 'Sensus Database Anggota', icon: Users, category: 'Database' },
+  { id: 'kta', label: 'Cetak KTA Digital', icon: FileText, category: 'Database' },
+  { id: 'profil_organisasi', label: 'Profil & Custom Logo', icon: Building2, category: 'Identitas' },
+  { id: 'role_management', label: 'Role & Manajemen Admin', icon: ShieldCheck, category: 'Super Admin' },
 ];
 
 export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
@@ -65,6 +68,8 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'roles' | 'guide'>('users');
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Modal State for User
   const [showUserModal, setShowUserModal] = useState(false);
@@ -108,6 +113,8 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
     return matchSearch && matchRole;
   });
 
+  const paginatedUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   // Open User Modal (Add / Edit)
   const handleOpenUserModal = (user?: UserAccount) => {
     setShowModalPassword(false);
@@ -128,18 +135,6 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
         const perm = rolePermissions.find(r => r.roleId === user.role);
         setFormCustomTabs(perm ? perm.allowedTabs : ['dashboard']);
       }
-    } else {
-      setEditingUser(null);
-      setFormName('');
-      setFormUsername('');
-      setFormPassword('123456');
-      setFormRole('pengurus');
-      setFormJabatan('');
-      setFormFotoUrl('');
-      setFormIsActive(true);
-      setUseCustomTabs(false);
-      const perm = rolePermissions.find(r => r.roleId === 'pengurus');
-      setFormCustomTabs(perm ? perm.allowedTabs : ['dashboard']);
     }
     setShowUserModal(true);
   };
@@ -272,6 +267,7 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
     }
 
     const newRole: RolePermission = {
+      id: cleanId,
       roleId: cleanId,
       roleName: newRoleName,
       description: newRoleDesc || 'Role kustom pengurus organisasi.',
@@ -407,7 +403,10 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
                 type="text"
                 placeholder="Cari nama, username, jabatan..."
                 value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
+                onChange={e => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full pl-9 pr-3 py-1.5 text-xs bg-white rounded-xl border border-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
@@ -416,7 +415,10 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
               <span className="text-xs text-emerald-800 font-semibold whitespace-nowrap">Filter Role:</span>
               <select
                 value={roleFilter}
-                onChange={e => setRoleFilter(e.target.value)}
+                onChange={e => {
+                  setRoleFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="p-1.5 text-xs bg-white border border-emerald-200 rounded-xl font-medium text-emerald-950 focus:outline-none"
               >
                 <option value="all">Semua Role Pengurus</option>
@@ -450,14 +452,14 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((u, idx) => {
+                  paginatedUsers.map((u, idx) => {
                     const roleInfo = rolePermissions.find(r => r.roleId === u.role);
                     const isSelf = currentUser.id === u.id;
                     const effectiveAllowedTabs = u.customAllowedTabs || (roleInfo ? roleInfo.allowedTabs : ['dashboard']);
 
                     return (
                       <tr key={u.id} className={`hover:bg-emerald-50/60 transition ${isSelf ? 'bg-amber-50/50 font-medium' : ''}`}>
-                        <td className="p-3 text-center font-bold text-emerald-700">{idx + 1}</td>
+                        <td className="p-3 text-center font-bold text-emerald-700">{(currentPage - 1) * pageSize + idx + 1}</td>
                         
                         {/* Avatar & Name */}
                         <td className="p-3">
@@ -590,6 +592,16 @@ export const RoleManagementView: React.FC<RoleManagementViewProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          <Pagination
+            currentPage={currentPage}
+            totalItems={filteredUsers.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="pengguna"
+          />
         </div>
       )}
 
